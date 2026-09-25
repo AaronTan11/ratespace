@@ -7,20 +7,15 @@
     "serve": "vp preview",
     "dev": "vp dev",
     "check-types": "vp build && tsc --noEmit",
-    "env:generate": "varlock codegen",
-    "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/src/schema/auth.ts --yes"
+    "env:generate": "varlock codegen"
   },
   "dependencies": {
-    "@ratespace/auth": "workspace:*",
-    "@ratespace/db": "workspace:*",
     "@ratespace/ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
-    "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.102.8",
     "@tanstack/react-router": "^1.170.32",
     "@tanstack/react-start": "^1.168.49",
     "@varlock/vite-integration": "1.5.1",
-    "better-auth": "catalog:",
     "lucide-react": "catalog:",
     "next-themes": "catalog:",
     "react": "catalog:",
@@ -28,6 +23,7 @@
     "sonner": "catalog:",
     "tailwindcss": "catalog:",
     "varlock": "catalog:",
+    "viem": "^2.56.9",
     "zod": "catalog:"
   },
   "devDependencies": {

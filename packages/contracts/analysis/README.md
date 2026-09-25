@@ -56,3 +56,30 @@ That port was not reused as-is. Differences found and fixed here:
 4. Its oracle-report "sandwich" only counted each leg at the rate live when it executed. That
    leaves out the maker's loss from selling wstETH at the old rate just before a known rise.
    `s3d_sandwich.py` prints both measures.
+
+## s5 — per-report wstETH rate moves from Lido mainnet history (network, read-only)
+
+`s5_lido_reports.py` measures how far `wstETH.stEthPerToken()` moves at each Lido oracle
+report, from every stETH `TokenRebased` log (topic0
+`0xff08c3ef606d198e316ef5b822193c489965899eb4e3c248cea1a4626c3eda50`, checked against the log
+at block 26047293). Per report: `preRate = preTotalEther*1e18 // preTotalShares`,
+`postRate = postTotalEther*1e18 // postTotalShares`, `move_bps = (post-pre)/pre*1e4` (exact).
+The threshold it compares against is re-derived from `s3e_fee_roundtrip.py` Part 3
+(fee 5000, demo order A=50, band 500): `1206113946104793 / 1.2e18 * 1e4` bps. It applies to that
+order only.
+
+```
+python3 s5_lido_reports.py --offline                  # summary from data/lido_reports.csv, no network
+set -a; . ../.env; set +a                              # loads MAINNET_RPC_URL into the environment only
+python3 s5_lido_reports.py --fetch                    # re-collect every log from block 0, rewrite the CSV
+python3 s5_lido_reports.py --offline --crosscheck     # eth_call stEthPerToken() at block-1 / block
+```
+
+`data/lido_reports.csv` columns: `block, tx_hash, report_timestamp, time_elapsed, preRate,
+postRate, move_bps` (move_bps rounded to 6 dp; the script recomputes it exactly from the rates).
+
+Scope limits:
+- `TokenRebased` exists only from Lido V2 (first log at block 17272708). Reports before that
+  (Lido V1, from stETH launch) are **not** covered.
+- Drops are checked at each report (post vs pre) and between consecutive reports (next pre vs
+  previous post). A move inside a report period that nets to zero would not show.

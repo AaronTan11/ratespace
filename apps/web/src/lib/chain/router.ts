@@ -20,6 +20,7 @@ export async function quote(
   amount: bigint,
   takerData: Hex,
   account?: Address,
+  blockNumber?: bigint,
 ): Promise<Quote> {
   const [amountIn, amountOut, orderHash] = await client.readContract({
     address: router,
@@ -27,12 +28,18 @@ export async function quote(
     functionName: "quote",
     args: [order, tokenIn, tokenOut, amount, takerData],
     account,
+    blockNumber,
   });
   return { amountIn, amountOut, orderHash };
 }
 
-export function routerHash(client: PublicClient, router: Address, order: OrderTuple): Promise<Hex> {
-  return client.readContract({ address: router, abi: routerAbi, functionName: "hash", args: [order] });
+export function routerHash(
+  client: PublicClient,
+  router: Address,
+  order: OrderTuple,
+  blockNumber?: bigint,
+): Promise<Hex> {
+  return client.readContract({ address: router, abi: routerAbi, functionName: "hash", args: [order], blockNumber });
 }
 
 export interface SwapResult {

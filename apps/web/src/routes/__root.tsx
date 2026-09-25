@@ -1,8 +1,11 @@
 import { Toaster } from "@ratespace/ui/components/sonner";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
+import { useState } from "react";
 
 import Header from "../components/header";
+import { WalletProvider } from "../lib/chain/wallet";
 
 import appCss from "../index.css?url";
 
@@ -19,7 +22,7 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "My App",
+        title: "RateSpace",
       },
     ],
     links: [
@@ -34,16 +37,21 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 });
 
 function RootDocument() {
+  const [queryClient] = useState(() => new QueryClient());
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
       <body>
-        <div className="grid h-svh grid-rows-[auto_1fr]">
-          <Header />
-          <Outlet />
-        </div>
+        <QueryClientProvider client={queryClient}>
+          <WalletProvider>
+            <div className="grid h-svh grid-rows-[auto_1fr]">
+              <Header />
+              <Outlet />
+            </div>
+          </WalletProvider>
+        </QueryClientProvider>
         <Toaster richColors />
         <TanStackRouterDevtools position="bottom-left" />
         <Scripts />

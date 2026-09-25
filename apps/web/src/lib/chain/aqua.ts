@@ -15,12 +15,14 @@ export async function rawBalances(
   app: Address,
   strategyHash: Hex,
   token: Address,
+  blockNumber?: bigint,
 ): Promise<RawBalance> {
   const [balance, tokensCount] = await client.readContract({
     address: aqua,
     abi: aquaAbi,
     functionName: "rawBalances",
     args: [maker, app, strategyHash, token],
+    blockNumber,
   });
   return { balance, tokensCount };
 }

@@ -1,0 +1,3 @@
+{
+  "extends": "@ratespace/config/tsconfig.base.json"
+}

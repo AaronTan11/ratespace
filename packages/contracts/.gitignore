@@ -3,3 +3,8 @@ out/
 foundry.lock
 analysis/__pycache__/
 .env
+broadcast/
+anvil.log
+anvil.pid
+out-demo/
+cache-demo/

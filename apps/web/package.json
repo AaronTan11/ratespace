@@ -7,7 +7,8 @@
     "serve": "vp preview",
     "dev": "vp dev",
     "check-types": "vp build && tsc --noEmit",
-    "env:generate": "varlock codegen"
+    "env:generate": "varlock codegen",
+    "test": "vp test run"
   },
   "dependencies": {
     "@ratespace/ui": "workspace:*",

@@ -5,6 +5,7 @@ import { Test } from "forge-std/Test.sol";
 
 import { Aqua } from "@1inch/aqua/src/Aqua.sol";
 import { TokenMock } from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
+import { SafeERC20 } from "@1inch/solidity-utils/contracts/libraries/SafeERC20.sol";
 
 import { ISwapVM } from "@swap-vm/interfaces/ISwapVM.sol";
 import { MakerTraitsLib } from "@swap-vm/libs/MakerTraits.sol";
@@ -141,7 +142,8 @@ contract SharedLiquidityTest is Test {
 
         yieldTokens[0].mint(address(taker), sellAmount);
         bytes memory takerData = _takerData(_isAToB(0));
-        vm.expectRevert();
+        // Aqua.pull's safeTransferFrom hits ERC20InsufficientBalance in the token and wraps it as SafeTransferFromFailed()
+        vm.expectRevert(SafeERC20.SafeTransferFromFailed.selector);
         taker.swap(orders[0], sellAmount, takerData);
 
         // Counter-check: the revert is the wallet shortfall. Topping the wallet up by exactly the

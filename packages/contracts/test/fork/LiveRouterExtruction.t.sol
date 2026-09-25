@@ -192,14 +192,18 @@ contract LiveRouterExtructionTest is ExtructionTestBase {
     }
 
     function test_Q7_BandCapAtExec() public onFork {
+        uint16[3] memory bands = [uint16(0), uint16(1001), uint16(65535)];
         uint256 depWst = _depWst(RATE_B);
-        bytes memory raw = abi.encodePacked(
-            MovingPegSwap.anchorFor(depWst, RATE_B), MovingPegSwap.anchorFor(DEP_WETH, ONE), WIDTH, RATE_B, ONE,
-            wstProvider, address(0), uint16(1001)
-        );
-        ISwapVM.Order memory order = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), raw)), false));
-        _shipV1(order, depWst);
-        _expectGuard(order, abi.encodeWithSelector(MovingPegExtruction.MovingPegSwapInvalidMaxDeviation.selector, uint256(1001)));
+        for (uint256 i = 0; i < bands.length; i++) {
+            bytes memory raw = abi.encodePacked(
+                MovingPegSwap.anchorFor(depWst, RATE_B), MovingPegSwap.anchorFor(DEP_WETH, ONE), WIDTH, RATE_B, ONE,
+                wstProvider, address(0), bands[i]
+            );
+            ISwapVM.Order memory order = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), raw)), false));
+            _shipV1(order, depWst);
+            _expectGuard(order, abi.encodeWithSelector(MovingPegExtruction.MovingPegSwapInvalidMaxDeviation.selector, uint256(bands[i])));
+            emit log_named_uint("Q7 band rejected at exec", bands[i]);
+        }
     }
 
     function test_Q7_ZeroRate() public onFork {

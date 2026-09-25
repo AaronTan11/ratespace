@@ -194,16 +194,102 @@ contract MovingPegExtructionTest is ExtructionTestBase {
         ));
     }
 
-    /// @dev Order bytes need not come from build(): a hand-encoded band of 1001 bps is rejected at exec time
+    /// @dev Order bytes need not come from build(): hand-encoded bands 0, 1001 and 65535 are rejected at exec time
     function test_Guard_BandCapAtExec() public {
+        uint16[3] memory bands = [uint16(0), uint16(1001), uint16(65535)];
+        uint256 depWst = _depWst(RATE_B);
+        for (uint256 i = 0; i < bands.length; i++) {
+            bytes memory raw = abi.encodePacked(
+                MovingPegSwap.anchorFor(depWst, RATE_B), MovingPegSwap.anchorFor(DEP_WETH, ONE), WIDTH, RATE_B, ONE,
+                wstProvider, address(0), bands[i]
+            );
+            ISwapVM.Order memory order = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), raw)), false));
+            _shipV1(order, depWst);
+            _expectGuard(order, abi.encodeWithSelector(MovingPegExtruction.MovingPegSwapInvalidMaxDeviation.selector, uint256(bands[i])));
+            emit log_named_uint("band rejected at exec", bands[i]);
+        }
+    }
+
+    /// @dev The Extruction args must be exactly the 202-byte MovingPegSwap blob: 201 and 203 bytes revert, 202 trades
+    function test_Guard_ArgsLength() public {
         uint256 depWst = _depWst(RATE_B);
         bytes memory raw = abi.encodePacked(
             MovingPegSwap.anchorFor(depWst, RATE_B), MovingPegSwap.anchorFor(DEP_WETH, ONE), WIDTH, RATE_B, ONE,
-            wstProvider, address(0), uint16(1001)
+            wstProvider, address(0), BAND
         );
-        ISwapVM.Order memory order = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), raw)), false));
+        assertEq(raw.length, 202, "standard args length");
+
+        bytes memory short = new bytes(201);
+        for (uint256 i = 0; i < 201; i++) short[i] = raw[i];
+        bytes memory long = bytes.concat(raw, hex"00");
+        assertEq(long.length, 203);
+
+        ISwapVM.Order memory o201 = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), short)), false));
+        _shipV1(o201, depWst);
+        _expectGuard(o201, abi.encodeWithSelector(MovingPegExtruction.MovingPegExtructionInvalidArgsLength.selector, uint256(201)));
+
+        ISwapVM.Order memory o203 = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), long)), false));
+        _shipV1(o203, depWst);
+        _expectGuard(o203, abi.encodeWithSelector(MovingPegExtruction.MovingPegExtructionInvalidArgsLength.selector, uint256(203)));
+
+        ISwapVM.Order memory o202 = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), raw)), false));
+        _shipV1(o202, depWst);
+        (uint256 aIn, uint256 aOut) = _qsV1("202-byte args WETH->wstETH exactIn 0.1", o202, 0.1e18, true, true);
+        assertEq(aIn, _pinned()[0], "202 trades: S1 in");
+        assertEq(aOut, _pinned()[1], "202 trades: S1 out");
+    }
+
+    // ===== Band edges, exact to the wei =====
+    // _resolveRate reverts iff rate * BPS < refRate * (BPS - band) || rate * BPS > refRate * (BPS + band), so:
+    //   lowest trading rate  lo = ceil(refRate * (BPS - band) / BPS)
+    //   highest trading rate hi = floor(refRate * (BPS + band) / BPS)
+    // and lo - 1, hi + 1 revert.
+
+    function _expectOutOfBand(ISwapVM.Order memory order, uint256 rate, uint256 refRate) internal {
+        _expectGuard(order, abi.encodeWithSelector(
+            MovingPegExtruction.MovingPegSwapRateOutOfBand.selector, wstProvider, rate, refRate, uint256(BAND)
+        ));
+    }
+
+    function _bandEdges(uint256 refRate, string memory tag) internal {
+        uint256 lo = (refRate * (10000 - BAND) + 9999) / 10000;
+        uint256 hi = refRate * (10000 + BAND) / 10000;
+        // The edges satisfy the require exactly as written, and one wei beyond does not
+        assertTrue(!(lo * 10000 < refRate * (10000 - BAND)), "lo passes the lower check");
+        assertTrue((lo - 1) * 10000 < refRate * (10000 - BAND), "lo - 1 fails the lower check");
+        assertTrue(!(hi * 10000 > refRate * (10000 + BAND)), "hi passes the upper check");
+        assertTrue((hi + 1) * 10000 > refRate * (10000 + BAND), "hi + 1 fails the upper check");
+        emit log_named_uint(string.concat(tag, " refRate"), refRate);
+        emit log_named_uint(string.concat(tag, " lo"), lo);
+        emit log_named_uint(string.concat(tag, " hi"), hi);
+
+        uint256 depWst = _depWst(refRate);
+        ISwapVM.Order memory order = _stdOrderV1(refRate, depWst, wstProvider, false);
         _shipV1(order, depWst);
-        _expectGuard(order, abi.encodeWithSelector(MovingPegExtruction.MovingPegSwapInvalidMaxDeviation.selector, uint256(1001)));
+
+        mockProvider.setRate(lo);
+        (, uint256 outLo) = _qsV1(string.concat(tag, " at lo"), order, 0.01e18, true, true);
+        assertGt(outLo, 0, "trades at lo");
+        mockProvider.setRate(hi);
+        (, uint256 outHi) = _qsV1(string.concat(tag, " at hi"), order, 0.01e18, true, true);
+        assertGt(outHi, 0, "trades at hi");
+
+        mockProvider.setRate(lo - 1);
+        _expectOutOfBand(order, lo - 1, refRate);
+        mockProvider.setRate(hi + 1);
+        _expectOutOfBand(order, hi + 1, refRate);
+    }
+
+    function test_BandEdges_Exact() public {
+        // refRate divisible by 20: refRate * 9500 and refRate * 10500 are exact multiples of 10000, so the
+        // edges hit the inequalities with EQUALITY (lo * 10000 == refRate * 9500): this pins strict < / >
+        uint256 r20 = RATE_B - RATE_B % 20;
+        assertEq(r20 * (10000 - BAND) % 10000, 0, "exact lower edge");
+        assertEq(r20 * (10000 + BAND) % 10000, 0, "exact upper edge");
+        _bandEdges(r20, "refRate%20==0");
+        // RATE_B itself: edges are the ceil / floor of a non-integer bound
+        assertTrue(RATE_B * (10000 - BAND) % 10000 != 0, "RATE_B lower edge is fractional");
+        _bandEdges(RATE_B, "RATE_B");
     }
 
     function test_Guard_ZeroRate() public {

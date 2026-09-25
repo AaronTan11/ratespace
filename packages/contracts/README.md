@@ -62,3 +62,19 @@ forge test
 Foundry uses the same compiler settings as upstream (solc 0.8.30, optimizer on, 700 runs,
 `via_ir = true`). After a fresh checkout, run `bun install --ignore-scripts` once inside each of `lib/swap-vm` and
 `lib/swap-vm-v1` to populate their untracked `node_modules` (bun only; no npm/yarn/pnpm).
+`via_ir = true`). No package manager is required for `lib/swap-vm`: its `node_modules` is already
+populated. `lib/swap-vm-v1` needs the one `bun install --ignore-scripts` described above.
+
+## Local demo
+
+Runs on a plain local anvil (chain 31337); no mainnet RPC needed. From `packages/contracts`:
+
+```
+script/demo.sh              # start anvil :8545, deploy + seed, write deployments/31337.json and 31337.abi.json
+script/rate-step.sh wstETH 1   # bump a demo rate feed by +1 bps (simulates an oracle report); also rETH | weETH
+script/demo-stop.sh         # stop anvil
+```
+
+Deployed (`script/DeployDemo.s.sol`): 1inch Aqua 0.1.0 and AquaSwapVMRouter v1.0.2 built from `lib/swap-vm-v1`, `MovingPegExtruction`, `RateSpaceOrderBuilder` (the app eth_calls it for all order/taker bytes), `DemoWETH`, Demo wstETH / rETH / weETH and one settable `DemoRateFeed` each. Maker = anvil account #0: 10 WETH shared as backing by three no-fee orders (one per yield token) plus one wstETH order with the 0.05% fee. Taker = anvil account #1: 5 WETH + 2 of each yield token, router approved. Keys default to anvil's public test keys (`DEMO_MAKER_PK` / `DEMO_TAKER_PK` override).
+
+The same `MovingPegExtruction` + order encoding was proven equal to the wei against 1inch's LIVE AquaSwapVMRouter and Aqua on a mainnet fork (`test/fork/LiveRouterExtruction.t.sol`).

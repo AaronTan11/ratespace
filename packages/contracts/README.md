@@ -9,12 +9,33 @@ src/instructions/MovingPegSwap.sol        MovingPegSwap instruction (PeggedSwap 
 src/rate-providers/                       IRateProvider, WstETHRateProvider
 src/opcodes/                              RateSpaceAquaOpcodes / RateSpaceOpcodes (opcode dispatch)
 src/routers/                              RateSpaceAquaRouter / RateSpaceRouter
+src/extruction/                           MovingPegExtruction (Extruction target) + MovingPegExtructionArgs (builder)
 test/                                     Foundry tests and mocks (including MockRateProvider, MockWstETH)
-lib/swap-vm/                              upstream 1inch swap-vm (READ-ONLY submodule)
+lib/swap-vm/                              upstream 1inch swap-vm @ 3b3da7d (READ-ONLY submodule)
+lib/swap-vm-v1/                           upstream 1inch swap-vm @ v1.0.2 = 32c687c (READ-ONLY submodule)
 ```
 
-`lib/swap-vm` is vendored upstream and must never be edited, added to, or deleted from.
-All imports from it are resolved through `remappings.txt`.
+`lib/swap-vm` and `lib/swap-vm-v1` are vendored upstream and must never be edited, added to, or deleted from.
+All imports from them are resolved through `remappings.txt`.
+
+## Two swap-vm pins
+
+- `lib/swap-vm` (main @ `3b3da7d`) is what our own `RateSpaceAquaRouter` (opcode `0x59`) is built from.
+- `lib/swap-vm-v1` (tag `v1.0.2` @ `32c687c`) is the version of 1inch's live `AquaSwapVMRouter`
+  (`0x111111338c5091e8440b67b168bae16a668ac0de`, eip712Domain `"1inch SwapVM v1.0"` / `"1.0.2"`).
+  Its swap/quote ABI and program encoding differ from `3b3da7d`. `MovingPegExtruction` runs MovingPegSwap's
+  per-trade math behind that router's `Extruction` opcode (`0x20` in the v1.0.2 AquaOpcodes table), so the
+  official router can serve the same prices.
+
+Imports: `@swap-vm/` resolves to `lib/swap-vm/contracts/`, `@swap-vm-v1/` to `lib/swap-vm-v1/src/`,
+and `@aqua-v1/` to the Aqua 0.1.0 package in `lib/swap-vm-v1/node_modules`. Files under `lib/swap-vm-v1/`
+resolve `@1inch/aqua` and `@1inch/solidity-utils` to their own `node_modules` (aqua 0.1.0, solidity-utils 6.9.7).
+OpenZeppelin (5.4.0) and forge-std (1.11.0) are byte-identical in both trees and shared.
+`MovingPegExtruction` imports `PeggedSwapMath` and `InstructionArgs` from `lib/swap-vm` (3b3da7d), the
+same files MovingPegSwap uses.
+
+`lib/swap-vm-v1/node_modules` is untracked. Populate it with `bun install --ignore-scripts` inside
+`lib/swap-vm-v1`.
 
 ## Demo pair
 
@@ -31,5 +52,5 @@ forge test
 ```
 
 Foundry uses the same compiler settings as upstream (solc 0.8.30, optimizer on, 700 runs,
-`via_ir = true`). No package manager is required: the submodule's `node_modules` is already
-populated.
+`via_ir = true`). No package manager is required for `lib/swap-vm`: its `node_modules` is already
+populated. `lib/swap-vm-v1` needs the one `bun install --ignore-scripts` described above.

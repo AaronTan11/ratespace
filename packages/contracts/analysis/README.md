@@ -83,3 +83,52 @@ Scope limits:
   (Lido V1, from stETH launch) are **not** covered.
 - Drops are checked at each report (post vs pre) and between consecutive reports (next pre vs
   previous post). A move inside a report period that nets to zero would not show.
+
+## s6 — rETH / cbETH / weETH rate-update history (network, read-only)
+
+`s6_lst_rates.py` lists every block in which each token's rate function changed over 365 days
+(blocks 23441102..26055515 for rETH, 23441114..26055528 for cbETH and weETH), and compares
+the moves with the same s3e Part 3 threshold as s5 (`1206113946104793 / 1.2e18 * 1e4` bps,
+demo order A=50, band 500, fee 5000; that order only).
+
+Mechanism per token (each confirmed by eth_call of the rate at block-1 and block):
+- **rETH** `getExchangeRate()` on 0xae78…6393. It changes only in blocks with a
+  `BalancesUpdated` event from RocketNetworkBalances (the address RocketStorage returns for
+  `contract.addressrocketNetworkBalances`: 0x6Cc6…1399, then 0x1D9F…9473 after an upgrade
+  between blocks 24474719 and 24481884). 363 changes, 363 events, each event's
+  `totalEth*1e18 // rethSupply` equals the post-block rate.
+- **cbETH** `exchangeRate()` on 0xBe98…9704. It changes only in blocks with an
+  `ExchangeRateUpdated` event on cbETH itself. 364 changes, 364 events, each
+  `newExchangeRate` equals the post-block rate.
+- **weETH** `getRate()` on 0xCd5f…b7ee (= LiquidityPool `amountForShare(1e18)`). It moves at
+  each ether.fi oracle report (`Rebase` event on LiquidityPool 0x3088…F216; 1598 blocks) **and
+  also on ordinary transactions** that change pooled ETH or eETH shares, e.g. withdrawal
+  claims (`batchClaimWithdraw`) and `redeemWeEth` (13265 changes in blocks with no `Rebase`).
+  In one block, 25632424, the rate moved again after the `Rebase` tx (tx index 391): the only
+  later tx in that block with eETH share logs is a `redeemWeEth` call (index 432, eETH shares
+  burned), so the event rate differs from the post-block rate by 175572725 wei. The summary
+  prints both rates and the cross-check confirms the block-1 and block values.
+
+```
+python3 s6_lst_rates.py --offline                     # summaries from data/lst_rates_<token>.csv, no network
+set -a; . ../.env; set +a                              # loads MAINNET_RPC_URL into the environment only
+python3 s6_lst_rates.py --fetch [TOKEN ...]           # resumable re-collection; re-run until COMPLETE
+python3 s6_lst_rates.py --offline --crosscheck        # eth_call at block-1 / block for >= 12 changes per token
+```
+
+`--fetch` keeps its progress in `$S6_CACHE` (default `<temp dir>/s6_lst_cache`) and writes a
+CSV only when a token is complete. `--rewrite` rebuilds the CSVs from a complete cache.
+
+`data/lst_rates_<token>.csv` columns: `block, timestamp, gap_s, preRate, postRate, move_bps,
+update_event_tx, event_rate` (`preRate` = rate at block-1, `postRate` = rate at block;
+move_bps rounded to 6 dp and recomputed exactly by the script; the event columns are empty
+when the block has no update event). The `#` header lines give the scanned range and event
+counts.
+
+Scope limits:
+- Granularity is one block: several rate-moving txs in one block appear as one change.
+- Changes are found by sampling the rate every 256 blocks (rETH, cbETH) or 64 blocks (weETH)
+  and bisecting every interval whose endpoints differ, plus a block-1 / block check of every
+  update-event block. A rise and an equal fall inside one sampling interval with no update
+  event would not show.
+- The 365-day window only; older history is not covered.

@@ -817,6 +817,82 @@ contract MovingPegSwapTest is MovingPegSwapAquaBase {
         assertEq(amountIn, 1, "curve rounds to 0; the 1-wei min-in must charge exactly 1 wei");
     }
 
+    // ===== F4e: partial dust exactOut value floor (round-4 M1, mutant N7) =====
+
+    /// @notice Partial exactOut of a dust reserve. rIn = rOut = 0.05e18, output reserve reduced to
+    ///   5 wei through the router (normalized y0 = floor(5 * 0.05) = 0, so the value floor applies).
+    ///   For j in 1..4 wei the floor must charge input worth the REQUESTED j-wei output, not the whole
+    ///   5-wei reserve: amountIn == ceilDiv(j * rOut, rIn) (= j here) and value in >= value out.
+    ///   Pins N7 (`ctx.swap.amountOut` -> `y0_raw` in the exactOut floor), which charges 5 for every j.
+    function test_M_DustValueFloor_PartialExactOut() public {
+        uint256 rIn = 0.05e18;
+        uint256 rOut = 0.05e18;
+        uint256 k = 5;
+        rateProvider.setRate(rOut);
+        uint256 dLt = 6e18 * ONE / rIn;
+        uint256 dGt = 6e18 * ONE / rOut + 5;
+        ISwapVM.Order memory order = _createOrder(_programRates(rIn, rOut, dLt, dGt));
+        _ship(order);
+        TokenMock(address(stEthLike)).mint(address(taker), 1e27);
+
+        _performSwap(order, dGt - k, true, false, false);
+        assertEq(_aquaBalanceOf(order, address(tokenGt)), k, "output reserve must be k wei");
+        assertEq(k * rOut / ONE, 0, "normalized output reserve must round to 0");
+
+        for (uint256 j = 1; j < k; j++) {
+            uint256 snap = vm.snapshotState();
+            (uint256 qIn, uint256 qOut) = _quote(order, j, true, false);
+            (uint256 aIn, uint256 aOut) = _performSwap(order, j, true, false, false);
+            emit log_named_uint("N7 j", j);
+            emit log_named_uint("N7   partial dust exactOut amountIn", aIn);
+            assertEq(aOut, j, "partial dust exactOut must deliver j wei");
+            assertEq(qIn, aIn, "quote amountIn == swap amountIn");
+            assertEq(qOut, aOut, "quote amountOut == swap amountOut");
+            assertEq(aIn, Math.ceilDiv(j * rOut, rIn), "floor must price the requested j wei, not the reserve");
+            assertEq(aIn, j, "rIn == rOut: j wei out costs exactly j wei in");
+            assertGe(aIn * rIn, j * rOut, "partial dust exactOut: value in < value out");
+            vm.revertToState(snap);
+        }
+    }
+
+    // ===== F4f: exactOut gate `y0 == 0` pinned at large anchors (round-4 m2, mutant N3) =====
+
+    /// @notice The exactOut value floor is gated on normalized y0 == 0. With anchors <= 1e27 a
+    ///   y0 == 1 reserve is already priced >= value by the curve, so `y0 <= 1` is indistinguishable
+    ///   there. Above 1e27 (anchors 1e30 per side) the curve rounds a y0 == 1 exactOut to the 1-wei
+    ///   min-in. This pins the owner-accepted behaviour of the real gate; it is NOT a value-floor
+    ///   assertion. Direct harness, output reserve 2 wei at rOut 0.9e18 (y0 = floor(1.8) = 1).
+    /// @dev balIn is rounded UP so normalized x0 == anchor exactly. With a floored balIn at
+    ///   rIn 0.9e18 (x0 = 1e30 - 1) the exactOut path panics 0x11; not pinned here.
+    function test_M_ExactOutGate_LargeAnchors_Pinned() public {
+        MovingPegSwapHarness h = new MovingPegSwapHarness();
+        address lt = address(0x1000);
+        address gt = address(0x2000);
+        uint256 anchor = 1e30;
+        uint256 rOut = 0.9e18;
+        uint256 balOut = 2;
+        assertEq(balOut * rOut / ONE, 1, "normalized output reserve must be exactly 1");
+
+        uint256[2] memory rIns = [uint256(0.05e18), 0.9e18];
+        for (uint256 i = 0; i < rIns.length; i++) {
+            uint256 rIn = rIns[i];
+            uint256 balIn = Math.ceilDiv(anchor * ONE, rIn);
+            assertEq(balIn * rIn / ONE, anchor, "normalized x0 must equal the anchor");
+            bytes memory prog = MovingPegSwap.build(anchor, anchor, WIDTH, rIn, rOut, address(0), address(0), 500);
+            for (uint256 j = 1; j <= balOut; j++) {
+                (uint256 amountIn, uint256 amountOut) = h.exec(false, lt, gt, balIn, balOut, j, prog);
+                emit log_named_uint("N3 rIn", rIn);
+                emit log_named_uint("N3   j", j);
+                emit log_named_uint("N3   exactOut amountIn", amountIn);
+                assertEq(amountOut, j, "exactOut must deliver j wei");
+                // Measured with the real gate: the curve rounds to 0 and the 1-wei min-in charges 1.
+                // Under N3 (`y0 <= 1`) the floor would charge ceilDiv(j * rOut, rIn): 18/36 at
+                // rIn 0.05e18, 1/2 at rIn 0.9e18.
+                assertEq(amountIn, 1, "real gate (y0 == 0) does not floor a y0 == 1 exactOut: 1 wei");
+            }
+        }
+    }
+
     // ===== F4d: the dust-drain state is reachable through a normal Aqua order =====
 
     /// @notice Router-level twin of the direct-harness dust-drain test. One ordinary exactOut through

@@ -210,6 +210,35 @@ contract MovingPegExtructionTest is ExtructionTestBase {
         }
     }
 
+    /// @dev The other side of the exec-time band check: hand-encoded bands exactly 1 (the lowest accepted,
+    ///   pins `> 0`) and exactly 1000 (the cap, pins `<=`) QUOTE AND SWAP through the v1.0.2 router. The live
+    ///   rate equals refRate (RATE_B), so even band 1 is not tripped; with the rate at refRate the band does
+    ///   not enter the pricing, so each fill equals the pinned S1 fill (produced at BAND 500).
+    function test_Guard_BandEdgesTradeAtExec() public {
+        uint16[2] memory bands = [uint16(1), uint16(1000)];
+        uint256 depWst = _depWst(RATE_B);
+        assertEq(mockProvider.rate(), RATE_B, "live rate == refRate");
+        for (uint256 i = 0; i < bands.length; i++) {
+            bytes memory raw = abi.encodePacked(
+                MovingPegSwap.anchorFor(depWst, RATE_B), MovingPegSwap.anchorFor(DEP_WETH, ONE), WIDTH, RATE_B, ONE,
+                wstProvider, address(0), bands[i]
+            );
+            assertEq(raw.length, 202, "standard args length");
+            assertEq(
+                (uint16(uint8(raw[200])) << 8) | uint16(uint8(raw[201])), bands[i], "band is the last 2 bytes"
+            );
+            ISwapVM.Order memory order = _orderV1(_programV1(_ins(opExtruction, abi.encodePacked(address(target), raw)), false));
+            _shipV1(order, depWst);
+            string memory label = string.concat("band ", vm.toString(bands[i]), " at exec WETH->wstETH exactIn 0.1");
+            // _qsV1 asserts quote == swap (amountIn and amountOut) and exact taker / maker balance deltas
+            (uint256 aIn, uint256 aOut) = _qsV1(label, order, 0.1e18, true, true);
+            assertGt(aOut, 0, "band edge trades: amountOut > 0");
+            assertEq(aIn, _pinned()[0], "band edge: S1 in");
+            assertEq(aOut, _pinned()[1], "band edge: S1 out");
+            emit log_named_uint("band accepted at exec", bands[i]);
+        }
+    }
+
     /// @dev The Extruction args must be exactly the 202-byte MovingPegSwap blob: 201 and 203 bytes revert, 202 trades
     function test_Guard_ArgsLength() public {
         uint256 depWst = _depWst(RATE_B);

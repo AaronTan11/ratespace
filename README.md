@@ -1,117 +1,109 @@
-# ratespace
+# RateSpace
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Start, Self, and more.
+One ETH balance is the exit and entry liquidity for every staked-ETH token — on 1inch Aqua, priced at the live rate, running on 1inch's official router.
 
-## Features
+Built for ETHGlobal Tokyo 2026, 1inch "Build an Aqua App" track.
 
-- **TypeScript** - For type safety and improved developer experience
-- **TanStack Start** - SSR framework with TanStack Router
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Vite+** - Unified Vite toolchain, workspace task runner, linting, and formatting
+## The problem
 
-## Getting Started
+- A pegged pool fixes its price when it is created. Staked-ETH tokens (wstETH, rETH, weETH) grow in value every day, so a frozen peg goes stale and arbitrageurs take the difference from the maker.
+- Each staked-ETH pair needs its own pool with its own ETH. A maker who wants to serve three tokens has to split its ETH three ways.
+- Exiting through the issuer's own withdrawal queue is not instant.
 
-First, install the dependencies:
+## What we built
 
-```bash
-bun install
-```
+- **MovingPegSwap** (SwapVM opcode `0x59`). 1inch's PeggedSwap curve, with two changes: the anchors are fixed once, in ETH value, and each token's rate is read live on every trade. A guard band around the reference rate stops trading if the rate moves too far. The order bytes never change when the rate moves.
+- **Rate providers** for wstETH, rETH and weETH. One small contract per token that reads the token's own on-chain rate (`stEthPerToken()`, `getExchangeRate()`, `getRate()`). No oracle, no push.
+- **MovingPegExtruction**. The same per-trade math, packaged as a target for the `Extruction` opcode of 1inch's official `AquaSwapVMRouter` v1.0.2. So the official router can serve our prices without a custom router.
+- **Shared backing**. One maker wallet on Aqua backs many markets at once (one WETH balance, three staked-ETH orders).
+- **The app** (`apps/web`). Three screens: the shared-backing view, a swap screen, and a rate screen that steps a demo rate and shows the quote follow it with the same order.
 
-## Database Setup
+## How it differs from aqua0
 
-This project uses PostgreSQL with Drizzle ORM.
+- aqua0's `ForexCurve` adds a new SwapVM opcode that prices FX pairs from a Chainlink-style `latestRoundData()` feed, which an oracle has to push. A new opcode means a router built to include it.
+- RateSpace reads each token's own on-chain exchange rate (nothing to push, nothing to go stale) and runs on 1inch's official `AquaSwapVMRouter` through its existing `Extruction` opcode. We also have our own router (`RateSpaceAquaRouter`) with the same math as a native opcode.
 
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/web/.env` file with your PostgreSQL connection details.
+## Proofs
 
-3. Apply the schema to your database:
+Local rows re-run from this commit with no network. Paths are under `packages/contracts/`.
 
-```bash
-bun run db:push
-```
+| Claim | Where | Number |
+|---|---|---|
+| The Python model and the Solidity return the same integers | `test/ModelParity.t.sol`; `python3 analysis/gen_parity.py --check` | 109 + 18 + 16 cases equal to the wei; `--check` prints `True` |
+| After a rate step 1.20 → 1.25 (width A = 50), the pool is barely off the new price; a frozen peg is far off | `python3 analysis/s3a_arb_step.py` | ours 0.010206 bps, frozen PeggedSwap 157.015569 bps (best arbitrage, bps of pool value) |
+| The 0.05% fee blocks trading around a rate report while one report moves the rate less than the break-even step | `python3 analysis/s3e_fee_roundtrip.py` (Part 3) | break-even 10.0509 bps |
+| Real Lido reports are much smaller than that | `python3 analysis/s5_lido_reports.py --offline` (data in `analysis/data/lido_reports.csv`) | 1228 reports since Lido V2, largest move 3.223442 bps, 0 drops |
+| One 10 WETH wallet backs three markets | `test/SharedLiquidity.t.sol` (`-vv` logs) | 10e18 WETH in the wallet, 10e18 virtual WETH per strategy, 30e18 total; three 1e18 sells paid 3519603734275451780 wei = the wallet's drop exactly |
+| MovingPeg pricing runs on 1inch's official `AquaSwapVMRouter` v1.0.2 via `Extruction`, equal to our router | `test/extruction/MovingPegExtructionEquivalence.t.sol` | same order, same 5-swap sequence, all 12 amounts equal to the wei |
+| Full local suite | `MAINNET_RPC_URL= forge test` | 78 passed, 0 failed, 12 skipped (the fork tests) |
 
-Then, run the development server:
+Mainnet-fork results. These tests are committed but skip without `MAINNET_RPC_URL`, so they cannot be re-run from a plain checkout. The numbers below come from our last fork runs on 2026-09-25 and 2026-09-26. They are not in any committed log file.
 
-```bash
-bun run dev
-```
+| Claim | Where | Number (last fork run) |
+|---|---|---|
+| A real Lido report (block 26047292 → 26047293) moves our price with the rate, same order hash | `test/fork/MainnetFork.t.sol` T3 | ours 0.003 bps from the new rate, frozen PeggedSwap 0.617 bps |
+| Gas on the live Aqua | `test/fork/MainnetFork.t.sol` T5 | ours (fee + MovingPegSwap) 155076, upstream fee + PeggedSwap 117248 |
+| Pricing on 1inch's live router at `0x111111338c5091e8440b67b168bae16a668ac0de` | prototype run on 2026-09-26, now `test/fork/LiveRouterExtruction.t.sol` | 12 swap amounts equal our router to the wei; gas 169788 (171544 with fee) |
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the fullstack application.
+The committed `LiveRouterExtruction.t.sol` has not been run on a fork yet. The live-router numbers come from the prototype it was built from.
 
-## UI Customization
+## Run it locally
 
-React web apps in this stack share shadcn/ui primitives through `packages/ui`.
-
-- Change design tokens and global styles in `packages/ui/src/styles/globals.css`
-- Update shared primitives in `packages/ui/src/components/*`
-- Adjust shadcn aliases or style config in `packages/ui/components.json` and `apps/web/components.json`
-
-### Add more shared components
-
-Run this from the project root to add more primitives to the shared UI package:
+Needs Foundry (`anvil`, `forge`, `cast`) and bun. No mainnet RPC.
 
 ```bash
-npx shadcn@latest add accordion dialog popover sheet table -c packages/ui
+git submodule update --init
+(cd packages/contracts/lib/swap-vm && bun install --ignore-scripts)
+(cd packages/contracts/lib/swap-vm-v1 && bun install --ignore-scripts)
+bun install --ignore-scripts
+
+cd packages/contracts
+script/demo.sh                   # anvil on :8545 (chain 31337), deploys + seeds, writes deployments/31337.json
+script/rate-step.sh wstETH 1     # optional: step a demo rate by +1 bps (also rETH | weETH)
+script/demo-stop.sh              # when done
+
+cd ../.. && bun run dev:web      # the app; RPC defaults to http://127.0.0.1:8545
 ```
 
-Import shared components like this:
+`demo.sh` deploys 1inch Aqua 0.1.0 and `AquaSwapVMRouter` v1.0.2 from source, `MovingPegExtruction`, an on-chain order builder, demo WETH, demo wstETH / rETH / weETH, and one settable demo rate feed per token.
 
-```tsx
-import { Button } from "@ratespace/ui/components/button";
-```
+Accounts (anvil's public test keys; `DEMO_MAKER_PK` / `DEMO_TAKER_PK` override):
+- Maker = anvil #0 `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`. 10 WETH backing three no-fee orders (one per token) plus one wstETH order with the 0.05% fee.
+- Taker = anvil #1 `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`. 5 WETH and 2 of each demo token, router approved.
 
-### Add app-specific blocks
+Import the keys into a browser wallet on chain 31337, then:
+- `/`: one maker wallet, its WETH balance, and the virtual WETH each of the three markets quotes against.
+- `/trade` (taker): pick wstETH, rETH or weETH, pick Exit (token → WETH) or Enter (WETH → token), type an amount, press Swap.
+- `/rate` (maker): press "Simulate report +1 bp" on a card. The rate and the quote move; the order hash stays the same.
 
-If you want to add app-specific blocks instead of shared primitives, run the shadcn CLI from `apps/web`.
-
-## Environment Configuration
-
-Each app owns its environment schema in `.env.schema`. Varlock generates `src/env.ts` during installation; run `bun run env:generate` after changing a schema. Commit schemas, and keep secrets in ignored env files or your deployment platform.
-
-Import the generated `ENV` accessor in application code. Shared database and auth packages receive configuration or initialized clients from the application. See [Varlock's monorepo guide](https://varlock.dev/guides/monorepos/).
-
-Bun's automatic env loading is disabled in `bunfig.toml`; the framework integration or server bootstrap loads Varlock. Node deployments must include Varlock and its dependencies alongside the app schema.
-
-Run standalone Node/Bun tools that use Varlock from the owning app directory so they load that app's schema and env files. `env:generate` only generates TypeScript files; it does not initialize environment values in a subsequent command.
-
-## Git Hooks and Formatting
-
-- Optional native Vite+ hooks: `bun run hooks:setup`
-- Docs: [Vite+ commit hooks](https://viteplus.dev/guide/commit-hooks)
-- Run checks: `bun run check`
-
-## Project Structure
+## Repo map
 
 ```
-ratespace/
-├── apps/
-│   └── web/         # Fullstack application (React + TanStack Start)
-├── packages/
-│   ├── ui/          # Shared shadcn/ui components and styles
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
+packages/contracts/
+  src/instructions/MovingPegSwap.sol     the opcode (0x59)
+  src/extruction/                        MovingPegExtruction for the official v1.0.2 router
+  src/rate-providers/                    wstETH, rETH, weETH providers
+  src/opcodes/, src/routers/             RateSpaceAquaRouter (our router)
+  src/demo/, script/                     demo mocks, order builder, deploy script, demo.sh
+  test/                                  unit, parity, invariant, shared-liquidity, extruction, fork
+  analysis/                              exact-integer Python model; every number in MATH.md
+  MATH.md                                the maths, with reproducible numbers
+  lib/swap-vm, lib/swap-vm-v1            1inch swap-vm @ 3b3da7d and @ v1.0.2 (read-only)
+apps/web/                                the app (TanStack Start, viem)
 ```
 
-## Available Scripts
+## Honest limits
 
-- `bun run dev`: Start all applications in development mode
-- `bun run build`: Build all applications
-- `bun run dev:web`: Start only the web application
-- `bun run check-types`: Check TypeScript types across all apps
-- `bun run db:push`: Push schema changes to database
-- `bun run db:generate`: Generate database client/types
-- `bun run db:migrate`: Run database migrations
-- `bun run db:studio`: Open database studio UI
-- `bun run check`: Run Vite+ format/lint checks and workspace TypeScript checks
-- `bun run lint`: Run Vite+ lint checks
-- `bun run format`: Run Vite+ formatting
-- `bun run staged`: Run Vite+ checks against staged files
-- `bun run hooks:setup`: Install Vite+ native Git hooks with `vp config`
+- Not audited.
+- The demo runs on a local anvil chain with mock tokens and settable mock rate feeds. Nothing is deployed on a public chain.
+- The fork proofs need a mainnet RPC to re-run.
+- Anchors must be value-balanced (equal ETH value on both sides at ship time). Unbalanced anchors put the centre price off the rate by design (`MATH.md` §2, Claim 3).
+- The guard band is capped at 10% (1000 bps); the demo orders use 5%.
+- Without a fee, a trader who knows a rate report is coming can buy before it and sell after it, taking the report's gain on the pool's staked-ETH side (`MATH.md` §3d). The 0.05% fee blocks this only while one report moves the rate less than 10.0509 bps.
+- The codebase was started before the event. The git history starts on 2026-09-26. <!-- TODO-OWNER: confirm whether to write "history re-initialised at the start of the hackathon with the organiser's approval" -->
 
-## Better Auth Schema Generation
+## Team and links
 
-After changing auth plugins or schema options, run `bun run auth:generate` from the project root. The script runs the Better Auth CLI through `varlock run` from the owning app directory, loading the auth instance from `src/services.ts`. Review the schema changes, then use your ORM's migration workflow to apply them.
+- Team: TODO-OWNER
+- Demo video: TODO-OWNER
+- ETHGlobal showcase page: TODO-OWNER

@@ -10,10 +10,8 @@ src/rate-providers/                       IRateProvider, WstETH/RETH/WeETH rate 
 src/opcodes/                              RateSpaceAquaOpcodes / RateSpaceOpcodes (opcode dispatch)
 src/routers/                              RateSpaceAquaRouter / RateSpaceRouter
 test/                                     Foundry tests and mocks (including MockRateProvider, MockWstETH, MockRETH, MockWeETH)
-lib/swap-vm/                              upstream 1inch swap-vm (READ-ONLY submodule)
-src/extruction/                           MovingPegExtruction (Extruction target) + MovingPegExtructionArgs (builder)
-test/                                     Foundry tests and mocks (including MockRateProvider, MockWstETH)
 lib/swap-vm/                              upstream 1inch swap-vm @ 3b3da7d (READ-ONLY submodule)
+src/extruction/                           MovingPegExtruction (Extruction target) + MovingPegExtructionArgs (builder)
 lib/swap-vm-v1/                           upstream 1inch swap-vm @ v1.0.2 = 32c687c (READ-ONLY submodule)
 ```
 
@@ -62,5 +60,5 @@ forge test
 ```
 
 Foundry uses the same compiler settings as upstream (solc 0.8.30, optimizer on, 700 runs,
-`via_ir = true`). No package manager is required for `lib/swap-vm`: its `node_modules` is already
-populated. `lib/swap-vm-v1` needs the one `bun install --ignore-scripts` described above.
+`via_ir = true`). After a fresh checkout, run `bun install --ignore-scripts` once inside each of `lib/swap-vm` and
+`lib/swap-vm-v1` to populate their untracked `node_modules` (bun only; no npm/yarn/pnpm).

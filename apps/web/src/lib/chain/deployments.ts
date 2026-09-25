@@ -75,9 +75,52 @@ export interface Deployments {
   orders: DeployedOrder[];
 }
 
+// The demo lane's DeployDemo.s.sol writes flat contract keys and orders without a name.
+// Normalise that shape into the one the app was written against; leave the nested shape untouched.
+const FLAT_TO_ADDRESS: Record<string, keyof Deployments["addresses"]> = {
+  Aqua: "aqua",
+  AquaSwapVMRouter: "router",
+  MovingPegExtruction: "extruction",
+  RateSpaceOrderBuilder: "orderBuilder",
+  DemoWETH: "weth",
+  DemoWstETH: "wstETH",
+  DemoRETH: "rETH",
+  DemoWeETH: "weETH",
+  RateFeedWstETH: "feedWstETH",
+  RateFeedRETH: "feedRETH",
+  RateFeedWeETH: "feedWeETH",
+};
+
+function normaliseDeployments(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.addresses === "object" && r.addresses !== null) return raw;
+  const addresses: Record<string, unknown> = {};
+  for (const [flat, key] of Object.entries(FLAT_TO_ADDRESS)) {
+    if (typeof r[flat] === "string") addresses[key] = r[flat];
+  }
+  const yieldName = (token: unknown): string => {
+    for (const key of YIELD_KEYS) {
+      const a = addresses[key];
+      if (typeof a === "string" && typeof token === "string" && a.toLowerCase() === token.toLowerCase()) return key;
+    }
+    return "order";
+  };
+  const orders = Array.isArray(r.orders)
+    ? r.orders.map((o: unknown, i: number) => {
+        if (typeof o !== "object" || o === null) return o;
+        const order = o as Record<string, unknown>;
+        if (typeof order.name === "string") return order;
+        const base = yieldName(order.tokenYield);
+        return { ...order, name: `${base}${order.hasFee ? "-fee" : ""}-${i + 1}` };
+      })
+    : r.orders;
+  return { chainId: r.chainId, addresses, orders };
+}
+
 /** Validates an unknown JSON value against the demo-lane deployments shape. Throws on mismatch. */
 export function parseDeployments(raw: unknown): Deployments {
-  return deploymentsSchema.parse(raw) as Deployments;
+  return deploymentsSchema.parse(normaliseDeployments(raw)) as Deployments;
 }
 
 /** The on-chain ISwapVM.Order tuple for an order from the deployments file. */

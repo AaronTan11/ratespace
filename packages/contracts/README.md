@@ -6,10 +6,10 @@ Moving-peg swap instruction and routers built on top of the 1inch `swap-vm` VM.
 
 ```
 src/instructions/MovingPegSwap.sol        MovingPegSwap instruction (PeggedSwap with live rate providers)
-src/rate-providers/                       IRateProvider, WstETHRateProvider
+src/rate-providers/                       IRateProvider, WstETH/RETH/WeETH rate providers
 src/opcodes/                              RateSpaceAquaOpcodes / RateSpaceOpcodes (opcode dispatch)
 src/routers/                              RateSpaceAquaRouter / RateSpaceRouter
-test/                                     Foundry tests and mocks (including MockRateProvider, MockWstETH)
+test/                                     Foundry tests and mocks (including MockRateProvider, MockWstETH, MockRETH, MockWeETH)
 lib/swap-vm/                              upstream 1inch swap-vm (READ-ONLY submodule)
 ```
 
@@ -22,6 +22,14 @@ The demo order is the WETH/wstETH pair. The WETH side uses a static rate of `1e1
 side takes its live rate from `WstETHRateProvider` (`stEthPerToken`).
 
 Assumption: **1 stETH is treated as 1 ETH; this is an assumption, not an oracle.**
+
+## Rate providers
+
+- `WstETHRateProvider` (Lido wstETH): reads `stEthPerToken()`.
+- `RETHRateProvider` (Rocket Pool rETH): reads `getExchangeRate()`.
+- `WeETHRateProvider` (ether.fi weETH): reads `getRate()`.
+- Each returns the token's rate 1e18-scaled and holds the token address as an immutable set in the constructor.
+- Anyone can add a provider by implementing `IRateProvider` (`rate() returns (uint256)`, 1e18-scaled, non-zero).
 
 ## Build / test
 

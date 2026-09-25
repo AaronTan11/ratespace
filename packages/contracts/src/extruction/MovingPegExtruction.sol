@@ -38,6 +38,7 @@ contract MovingPegExtruction is IStaticExtruction {
     error MovingPegSwapInvalidMaxDeviation(uint256 maxDeviationBps);
     error MovingPegSwapZeroRate(address provider);
     error MovingPegSwapRateOutOfBand(address provider, uint256 rate, uint256 refRate, uint256 maxDeviationBps);
+    error MovingPegExtructionInvalidArgsLength(uint256 length);
 
     function extruction(
         bool, /* isStaticContext */
@@ -47,6 +48,7 @@ contract MovingPegExtruction is IStaticExtruction {
         bytes calldata args,
         bytes calldata /* takerData */
     ) external view returns (uint256 updatedNextPC, uint256 choppedLength, SwapRegisters memory updatedSwap) {
+        require(args.length == 202, MovingPegExtructionInvalidArgsLength(args.length));
         updatedSwap = swap;
         _exec(query, updatedSwap, args);
         return (nextPC, 0, updatedSwap);

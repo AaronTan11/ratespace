@@ -42,8 +42,7 @@
     "db:stop": "vp run --filter @ratespace/db db:stop",
     "db:down": "vp run --filter @ratespace/db db:down",
     "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/",
-    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/",
-    "auth:generate": "cd apps/web && bun run auth:generate"
+    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/"
   },
   "dependencies": {
     "zod": "catalog:"

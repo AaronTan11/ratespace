@@ -1,0 +1,5 @@
+cache/
+out/
+foundry.lock
+analysis/__pycache__/
+.env

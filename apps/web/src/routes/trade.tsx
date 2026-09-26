@@ -344,7 +344,7 @@ function TradeComponent() {
                     )}
                   </dd>
                   <dt>Fee</dt>
-                  <dd>{market?.order.hasFee ? "0.05%" : "none on this order"}</dd>
+                  <dd style={{ fontFamily: "var(--font-sans)" }}>{market?.order.hasFee ? "0.05%" : "None on this order"}</dd>
                   <dt>Block</dt>
                   <dd>{q.data ? q.data.blockNumber.toString() : "—"}</dd>
                   <dt>Order hash</dt>

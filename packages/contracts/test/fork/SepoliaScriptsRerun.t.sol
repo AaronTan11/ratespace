@@ -223,6 +223,13 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         st = v.liveness(d, orders);
         _assertStatus(st[0], VerifySepolia.Status.DOCKED, "docked order 0 DOCKED");
         _assertStatus(st[1], VerifySepolia.Status.OK, "order 1 OK");
+        // M1: docked, but the record's tokenYield is wrong (reads 0): the WETH side alone (0xff) makes it DOCKED
+        OrderRecord[] memory dockedWrongYield = new OrderRecord[](1);
+        dockedWrongYield[0] = _copy(orders[0]);
+        dockedWrongYield[0].tokenYield = vm.toString(SepoliaAddresses.STETH);
+        _assertStatus(
+            v.liveness(d, dockedWrongYield)[0], VerifySepolia.Status.DOCKED, "docked, wrong tokenYield: DOCKED"
+        );
         vm.expectRevert(bytes(DOCKED_MSG));
         v.run();
         assertEq(vm.readFile(path), real, "refused verify (docked) left the file untouched");
@@ -298,6 +305,95 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         vm.expectRevert(bytes(MISSING_MSG));
         v.run();
         assertEq(vm.readFile(path), before, "refused verify left the file untouched");
+        vm.removeFile(path);
+    }
+
+    /// @dev M10: a second ShipSepolia.run() broadcast from another wallet overwrites the top-level maker
+    ///   (ShipSepolia.s.sol:76 `d.maker = maker`); Verify must read each
+    ///   order at its own record's maker: all four OK, run() succeeds, file untouched
+    function test_Verify_TwoMakersBothOk() public onFork {
+        string memory path = _testPath("verify-twomakers");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        _shipScript(path, true).run();
+
+        (address m2, uint256 m2Key) = makeAddrAndKey("second-maker");
+        assertTrue(m2 != b, "second maker != broadcaster");
+        _fund(m2);
+        ShipSepolia s2 = _shipScript(path, true);
+        s2.setSalt(7);
+        // A no-argument vm.startBroadcast() (ShipSepolia.run) broadcasts from the single wallet the cheatcode state
+        // knows, else tx.origin; a prank cannot be used ("you have an active prank; broadcasting and pranks are not
+        // compatible"). rememberKey makes m2 that single wallet, as `forge script --private-key` would.
+        vm.rememberKey(m2Key);
+        s2.run();
+
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+        assertEq(orders.length, 4, "4 orders");
+        assertEq(d.maker, m2, "top-level maker == second maker (last ship)");
+        assertEq(vm.parseAddress(orders[0].maker), b, "order 0 maker == broadcaster");
+        assertEq(vm.parseAddress(orders[1].maker), b, "order 1 maker == broadcaster");
+        assertEq(vm.parseAddress(orders[2].maker), m2, "order 2 maker == second maker");
+        assertEq(vm.parseAddress(orders[3].maker), m2, "order 3 maker == second maker");
+        for (uint256 i = 0; i < 4; i++) {
+            (, uint8 n) = IAqua(d.aqua)
+                .rawBalances(
+                    vm.parseAddress(orders[i].maker),
+                    vm.parseAddress(orders[i].router),
+                    vm.parseBytes32(orders[i].strategyHash),
+                    d.wstEth
+                );
+            assertEq(n, 2, "Aqua: shipped by the record's maker");
+        }
+        string memory before = vm.readFile(path);
+
+        VerifySepolia v = _verifyScript(path);
+        VerifySepolia.Status[] memory st = v.liveness(d, orders);
+        for (uint256 i = 0; i < 4; i++) {
+            _assertStatus(st[i], VerifySepolia.Status.OK, "every order OK at its own maker");
+        }
+        v.run();
+        assertEq(vm.readFile(path), before, "verify left the file untouched");
+        vm.removeFile(path);
+    }
+
+    /// @dev M9: the same strategy bytes as a real order (fresh salt) shipped by hand with THREE tokens
+    ///   (wstETH, WETH, stETH): Aqua stores tokensCount 3 for both recorded tokens -> PHANTOM, not OK
+    function test_Verify_ThreeTokenShipIsPhantom() public onFork {
+        string memory path = _testPath("verify-threetoken");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        ShipSepolia s = _shipScript(path, true);
+        s.run();
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+
+        ShipSepolia.ShipParams memory p = s.params(d);
+        (address router,, bytes memory strategy,,) = s.buildOrder(d, p, b, false, 11);
+        address[] memory tokens = new address[](3);
+        tokens[0] = d.wstEth;
+        tokens[1] = d.weth;
+        tokens[2] = SepoliaAddresses.STETH;
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = p.depWst;
+        amounts[1] = p.depWeth;
+        vm.prank(b);
+        bytes32 h = IAqua(d.aqua).ship(router, strategy, tokens, amounts);
+        (, uint8 nYield) = IAqua(d.aqua).rawBalances(b, router, h, d.wstEth);
+        (, uint8 nWeth) = IAqua(d.aqua).rawBalances(b, router, h, d.weth);
+        assertEq(nYield, 3, "Aqua: tokensCount 3 (wstETH)");
+        assertEq(nWeth, 3, "Aqua: tokensCount 3 (WETH)");
+
+        OrderRecord[] memory all = new OrderRecord[](3);
+        all[0] = orders[0];
+        all[1] = orders[1];
+        all[2] = _copy(orders[0]);
+        all[2].strategyHash = vm.toString(h);
+        VerifySepolia.Status[] memory st = _verifyScript(path).liveness(d, all);
+        _assertStatus(st[0], VerifySepolia.Status.OK, "order 0 OK");
+        _assertStatus(st[1], VerifySepolia.Status.OK, "order 1 OK");
+        _assertStatus(st[2], VerifySepolia.Status.PHANTOM, "3-token ship PHANTOM");
         vm.removeFile(path);
     }
 

@@ -460,6 +460,134 @@ contract DeployDemoTest is Test {
         }
     }
 
+    // ===== DeployDemo.run(): per-order pricing args, one priced trade per order, and taker seeding =====
+
+    /// @dev The script's rate constants, as literals (independent of the script's own constants)
+    uint256 internal constant EXP_RATE_WSTETH = 1244787728742679575;
+    uint256 internal constant EXP_RATE_RETH = 1172468133468041111;
+    uint256 internal constant EXP_RATE_WEETH = 1104406989873418608;
+    /// @dev anvil default test key #1 (the script's ANVIL_KEY_1), as a literal
+    uint256 internal constant EXP_TAKER_PK = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
+    /// @dev WETH sold exactIn into each order by the taker
+    uint256 internal constant BUY_WETH = 0.1e18;
+
+    struct RunEnv {
+        string json;
+        address maker;
+        address taker;
+        Aqua aqua;
+        AquaSwapVMRouter router;
+        RateSpaceOrderBuilder builder;
+        DemoWETH weth;
+        address[3] tokens;
+        address[3] feeds;
+    }
+
+    function _runScript() internal returns (RunEnv memory e) {
+        string memory saved = vm.readFile(DEPLOYMENTS);
+        new DeployDemo().run();
+        e.json = vm.readFile(DEPLOYMENTS);
+        vm.writeFile(DEPLOYMENTS, saved);
+        assertEq(keccak256(bytes(vm.readFile(DEPLOYMENTS))), keccak256(bytes(saved)), "deployments json restored");
+        e.maker = vm.parseJsonAddress(e.json, ".maker");
+        e.taker = vm.parseJsonAddress(e.json, ".taker");
+        e.aqua = Aqua(vm.parseJsonAddress(e.json, ".Aqua"));
+        e.router = AquaSwapVMRouter(payable(vm.parseJsonAddress(e.json, ".AquaSwapVMRouter")));
+        e.builder = RateSpaceOrderBuilder(vm.parseJsonAddress(e.json, ".RateSpaceOrderBuilder"));
+        e.weth = DemoWETH(payable(vm.parseJsonAddress(e.json, ".DemoWETH")));
+        e.tokens = [
+            vm.parseJsonAddress(e.json, ".DemoWstETH"),
+            vm.parseJsonAddress(e.json, ".DemoRETH"),
+            vm.parseJsonAddress(e.json, ".DemoWeETH")
+        ];
+        e.feeds = [
+            vm.parseJsonAddress(e.json, ".RateFeedWstETH"),
+            vm.parseJsonAddress(e.json, ".RateFeedRETH"),
+            vm.parseJsonAddress(e.json, ".RateFeedWeETH")
+        ];
+    }
+
+    /// @dev Taker (anvil #1) balances and approvals exactly as run() seeds them: 5e18 DemoWETH and 2e18 of each
+    ///   yield token; router allowance = max for all four tokens; no Aqua allowance (pushMode pays via the router)
+    function test_DeployDemo_RunTakerSeeding() public {
+        RunEnv memory e = _runScript();
+        assertEq(e.taker, vm.addr(EXP_TAKER_PK), "taker = anvil account #1");
+        assertEq(e.weth.balanceOf(e.taker), 5e18, "taker DemoWETH = TAKER_WETH 5e18");
+        assertEq(e.weth.allowance(e.taker, address(e.router)), type(uint256).max, "taker DemoWETH -> router = max");
+        assertEq(e.weth.allowance(e.taker, address(e.aqua)), 0, "taker DemoWETH -> Aqua = 0");
+        for (uint256 k = 0; k < 3; k++) {
+            DemoYieldToken t = DemoYieldToken(e.tokens[k]);
+            string memory tag = string.concat("market ", vm.toString(k));
+            assertEq(t.balanceOf(e.taker), 2e18, string.concat(tag, " taker yield = TAKER_YIELD 2e18"));
+            assertEq(t.allowance(e.taker, address(e.router)), type(uint256).max, string.concat(tag, " taker yield -> router = max"));
+            assertEq(t.allowance(e.taker, address(e.aqua)), 0, string.concat(tag, " taker yield -> Aqua = 0"));
+        }
+    }
+
+    /// @dev For each of run()'s four orders: the MovingPeg args decoded from the shipped program carry market k's
+    ///   feed rate (== the literal constant), the yield anchor for market k's own deposit, and the 10e18 WETH
+    ///   anchor; Aqua holds market k's deposit; then the taker (pushMode) sells BUY_WETH exactIn, quote == swap.
+    function test_DeployDemo_RunOrdersPriced() public {
+        RunEnv memory e = _runScript();
+        uint256[3] memory expRate = [EXP_RATE_WSTETH, EXP_RATE_RETH, EXP_RATE_WEETH];
+        uint256[4] memory market = [uint256(0), 1, 2, 0];
+        // Measured on this test's first run (v1.0.2 router + Extruction, fresh run() state)
+        uint256[4] memory expOut = [uint256(80331005269595626), 85285942315021398, 90541847809761759, 80290841754443532];
+        for (uint256 i = 0; i < 4; i++) {
+            uint256 out = _checkPriced(e, i, market[i], expRate[market[i]]);
+            assertEq(out, expOut[i], string.concat("order ", vm.toString(i), " yield out pinned"));
+        }
+    }
+
+    function _checkPriced(RunEnv memory e, uint256 i, uint256 k, uint256 expRate) internal returns (uint256 aOut) {
+        string memory tag = string.concat("order ", vm.toString(i));
+        string memory o = string.concat(".orders[", vm.toString(i), "]");
+        bytes memory program = vm.parseJsonBytes(e.json, string.concat(o, ".program"));
+        bytes32 sh = vm.parseJsonBytes32(e.json, string.concat(o, ".strategyHash"));
+        address y = e.tokens[k];
+        bool yieldIsLt = y < address(e.weth);
+
+        uint256 rate = DemoRateFeed(e.feeds[k]).rate();
+        assertEq(rate, expRate, string.concat(tag, " feed rate == market constant"));
+
+        uint256 a = (i == 3 ? 6 : 0) + 22;
+        (uint256 yA, uint256 wA) = yieldIsLt ? (_word(program, a), _word(program, a + 32)) : (_word(program, a + 32), _word(program, a));
+        (uint256 rY, uint256 rW) = yieldIsLt ? (_word(program, a + 96), _word(program, a + 128)) : (_word(program, a + 128), _word(program, a + 96));
+        uint256 deposit = 10e18 * ONE / expRate;
+        assertEq(rY, rate, string.concat(tag, " refRate(yield) == feeds[k].rate()"));
+        assertEq(rW, ONE, string.concat(tag, " refRate(WETH) == 1e18"));
+        assertEq(yA, e.builder.anchorFor(deposit, expRate), string.concat(tag, " yield anchor == anchorFor(10e18*1e18/rate_k, rate_k)"));
+        assertEq(yA, MovingPegSwap.anchorFor(deposit, expRate), string.concat(tag, " yield anchor (library)"));
+        assertEq(wA, 10e18, string.concat(tag, " WETH anchor == 10e18"));
+        (uint256 bY, uint256 bW) = e.aqua.safeBalances(e.maker, address(e.router), sh, y, address(e.weth));
+        assertEq(bY, deposit, string.concat(tag, " Aqua yield balance == market deposit"));
+        assertEq(bW, 10e18, string.concat(tag, " Aqua WETH balance == 10e18"));
+
+        // One exactIn trade: the taker sells BUY_WETH for the yield token (pushMode, the app's path)
+        ISwapVM.Order memory order = e.builder.buildOrder(e.maker, program);
+        assertEq(e.router.hash(order), sh, string.concat(tag, " rebuilt order hash"));
+        bytes memory td = e.builder.buildTakerData(e.taker, true, true);
+        (, uint256 qOut,) = e.router.quote(order, address(e.weth), y, BUY_WETH, td);
+        uint256 yBefore = DemoYieldToken(y).balanceOf(e.taker);
+        vm.prank(e.taker, e.taker);
+        uint256 aIn;
+        (aIn, aOut,) = e.router.swap(order, address(e.weth), y, BUY_WETH, td);
+        assertEq(aIn, BUY_WETH, string.concat(tag, " exactIn amountIn"));
+        assertEq(aOut, qOut, string.concat(tag, " quote == swap"));
+        assertEq(DemoYieldToken(y).balanceOf(e.taker) - yBefore, aOut, string.concat(tag, " taker yield delta"));
+        uint256 ideal = BUY_WETH * ONE / expRate;
+        emit log_named_uint(string.concat(tag, " yield out for 0.1 WETH"), aOut);
+        emit log_named_uint(string.concat(tag, " ideal 0.1e18 * 1e18 / rate_k"), ideal);
+        emit log_named_uint(string.concat(tag, " ideal - out"), ideal - aOut);
+        // Bound (derived from the measured shortfall, ideal - out): no-fee orders 3976905242178 / 4222206729997 /
+        // 4482408106094 wei (~0.495 bps of ideal, curve slippage for 0.1 of 10 WETH value); fee order 44140420394272
+        // wei (~5.49 bps = 5 bps flat fee + curve). Test tolerance: 1 bp without fee, 10 bps with it. Any other
+        // market's rate is >= 5.8% away, far outside either tolerance.
+        assertLe(aOut, ideal, string.concat(tag, " out <= amountIn * 1e18 / rate_k"));
+        uint256 tolBps = i == 3 ? 10 : 1;
+        assertGe(aOut, ideal * (10000 - tolBps) / 10000, string.concat(tag, " out within slippage tolerance of amountIn * 1e18 / rate_k"));
+    }
+
     /// @dev Measured by test_DeployDemo_BothOrderings (fee order, 1e18 yield sold exactIn)
     uint256 internal constant FEE_OUT = 1243395810130833463;
 }

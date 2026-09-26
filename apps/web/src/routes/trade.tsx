@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { formatUnits, parseUnits, zeroAddress } from "viem";
 
-import { Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
+import { Details, Hex, routeName, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
 import { txUrl } from "@/lib/chain/chains";
@@ -192,7 +192,15 @@ function TradeComponent() {
 
   return (
     <main className="rs-page">
-      <PageHead eyebrow="Trade" title="Swap exact in" />
+      <PageHead
+        eyebrow="Trade"
+        title="Swap"
+        sub={
+          market?.order.hasFee
+            ? "You get the rate your token's own oracle says it's worth, minus a 0.05% fee."
+            : "You get the rate your token's own oracle says it's worth."
+        }
+      />
       {!loaded.deployed ? (
         <NotDeployed />
       ) : markets.length === 0 ? (
@@ -204,8 +212,8 @@ function TradeComponent() {
         <div className="rs-cols">
           <section className="rs-panel" aria-label="Order ticket">
             <div className="rs-panel-head">
-              <span className="rs-eyebrow">Order ticket</span>
-              <span className="rs-meta">exact in · quote refresh {REFRESH_MS / 1000}s</span>
+              <span className="rs-eyebrow">Swap</span>
+              <span className="rs-meta">price refreshes every {REFRESH_MS / 1000}s</span>
             </div>
             <div className="rs-panel-body">
               <div className="rs-seg" role="group" aria-label="Market">
@@ -228,7 +236,7 @@ function TradeComponent() {
               <div className="rs-field">
                 <div className="rs-field-top">
                   <label htmlFor="amount" className="rs-eyebrow">
-                    Amount in ({symIn})
+                    You pay
                   </label>
                   <span className="rs-meta">
                     Balance{" "}
@@ -280,29 +288,10 @@ function TradeComponent() {
                         <Num value={q.data.amountOut} decimals={decs.data.out} unit={symOut} />
                       </span>
                     </div>
-                    <dl className="rs-kv">
-                      <dt>Implied WETH per {key}</dt>
-                      <dd>{q.data.implied === null ? "n/a" : <Num value={q.data.implied} />}</dd>
-                      <dt>Feed rate()</dt>
-                      <dd>
-                        <Num value={q.data.rate} />
-                      </dd>
-                      <dt>Quote vs feed</dt>
-                      <dd>
-                        {q.data.implied === null || q.data.rate === 0n ? (
-                          "n/a"
-                        ) : (
-                          // the page's one --highlight number
-                          <span className="hl">{`${formatDeltaBps(q.data.rate, q.data.implied)} bps`}</span>
-                        )}
-                      </dd>
-                      <dt>Block</dt>
-                      <dd>{q.data.blockNumber.toString()}</dd>
-                    </dl>
                   </>
                 ) : amount === null ? (
                   <div className="muted" style={{ padding: "16px 0" }}>
-                    Enter an amount to quote.
+                    Enter how much you want to pay.
                   </div>
                 ) : (
                   <div style={{ padding: "16px 0", display: "grid", gap: 8 }}>
@@ -316,8 +305,8 @@ function TradeComponent() {
                 <div className="rs-inline-note">
                   <span className={`rs-dot${needsApprove ? "" : " good"}`} aria-hidden />
                   {needsApprove
-                    ? `Needs approval: the swap first sends approve(router, amount) on ${symIn}.`
-                    : `${symIn} allowance covers this amount; one transaction.`}
+                    ? `First swap of ${symIn}: your wallet asks you to allow it, then swaps.`
+                    : "Ready: one transaction in your wallet."}
                 </div>
               ) : null}
 
@@ -329,54 +318,106 @@ function TradeComponent() {
               >
                 {swapLabel}
               </button>
+
+              <Details>
+                <dl className="rs-kv">
+                  <dt>Oracle rate</dt>
+                  <dd>{q.data ? <Num value={q.data.rate} /> : "—"}</dd>
+                  <dt>Price you get</dt>
+                  <dd>
+                    {q.data && q.data.implied !== null ? (
+                      <>
+                        <Num value={q.data.implied} />
+                        <span className="rs-unit">WETH per {key}</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </dd>
+                  <dt>Quote vs feed</dt>
+                  <dd>
+                    {!q.data || q.data.implied === null || q.data.rate === 0n ? (
+                      "—"
+                    ) : (
+                      // the page's one --highlight number
+                      <span className="hl">{`${formatDeltaBps(q.data.rate, q.data.implied)} bps`}</span>
+                    )}
+                  </dd>
+                  <dt>Fee</dt>
+                  <dd>{market?.order.hasFee ? "0.05%" : "none on this order"}</dd>
+                  <dt>Block</dt>
+                  <dd>{q.data ? q.data.blockNumber.toString() : "—"}</dd>
+                  <dt>Order hash</dt>
+                  <dd>{q.data ? <Hex value={q.data.orderHash} /> : "—"}</dd>
+                  <dt>Route</dt>
+                  <dd>
+                    <span className="muted">via {market ? routeName(market.router) : "router"}</span>
+                    {market ? <Hex value={market.router} /> : null}
+                  </dd>
+                  <dt>Oracle feed</dt>
+                  <dd>{market ? <Hex value={market.feed} /> : "—"}</dd>
+                </dl>
+              </Details>
             </div>
           </section>
 
           <Panel title="Market" meta={market ? <Pair yieldSym={market.key} /> : null}>
             {market ? (
-              <dl className="rs-kv">
-                <dt>Feed rate()</dt>
-                <dd>{q.data ? <Num value={q.data.rate} /> : amount === null || q.isError ? "—" : <Skel w={80} />}</dd>
-                <dt>Virtual WETH backing (Aqua)</dt>
-                <dd>
-                  {backing.isError ? (
-                    <span className="bad">read failed</span>
-                  ) : backing.data ? (
-                    <Num value={backing.data.balance} unit="WETH" />
-                  ) : (
-                    <Skel w={80} />
-                  )}
-                </dd>
-                <dt>Order hash</dt>
-                <dd>{q.data ? <Hex value={q.data.orderHash} /> : amount === null || q.isError ? "—" : <Skel w={120} />}</dd>
-                <dt>Strategy hash</dt>
-                <dd>
-                  <Hex value={market.order.strategyHash} />
-                </dd>
-                <dt>Router</dt>
-                <dd>
-                  <Hex value={market.router} />
-                </dd>
-                <dt>Feed</dt>
-                <dd>
-                  <Hex value={market.feed} />
-                </dd>
-                <dt>Maker</dt>
-                <dd>
-                  <Hex value={market.order.maker} />
-                </dd>
-                {last ? (
-                  <>
-                    {last.approveTx ? <TxLine label="Last approve" hash={last.approveTx} /> : null}
-                    <TxLine label="Last swap" hash={last.swapTx} />
-                  </>
-                ) : (
-                  <>
-                    <dt>Last tx</dt>
-                    <dd className="muted">none this session</dd>
-                  </>
-                )}
-              </dl>
+              <>
+                <dl className="rs-kv">
+                  <dt>Pair</dt>
+                  <dd style={{ fontFamily: "var(--font-sans)" }}>{market.key} ⇄ WETH</dd>
+                  <dt>Oracle rate</dt>
+                  <dd>{q.data ? <Num value={q.data.rate} /> : amount === null || q.isError ? "—" : <Skel w={80} />}</dd>
+                  <dt>Available to swap</dt>
+                  <dd>
+                    {backing.isError ? (
+                      <span className="bad">read failed</span>
+                    ) : backing.data ? (
+                      <Num value={backing.data.balance} unit="WETH" />
+                    ) : (
+                      <Skel w={80} />
+                    )}
+                  </dd>
+                  <dt>Route</dt>
+                  <dd style={{ fontFamily: "var(--font-sans)" }}>
+                    via {routeName(market.router).startsWith("1inch") ? "1inch" : routeName(market.router)}
+                  </dd>
+                </dl>
+                <Details summary="Technical details">
+                  <dl className="rs-kv">
+                    <dt>Order id (strategy hash)</dt>
+                    <dd>
+                      <Hex value={market.order.strategyHash} />
+                    </dd>
+                    <dt>Router</dt>
+                    <dd>
+                      <Hex value={market.router} />
+                    </dd>
+                    <dt>Oracle feed</dt>
+                    <dd>
+                      <Hex value={market.feed} />
+                    </dd>
+                    <dt>Liquidity provider</dt>
+                    <dd>
+                      <Hex value={market.order.maker} />
+                    </dd>
+                    <dt>Available to swap = Aqua rawBalances</dt>
+                    <dd className="muted">{backing.data ? <Num value={backing.data.balance} /> : "—"}</dd>
+                    {last ? (
+                      <>
+                        {last.approveTx ? <TxLine label="Last approve" hash={last.approveTx} /> : null}
+                        <TxLine label="Last swap" hash={last.swapTx} />
+                      </>
+                    ) : (
+                      <>
+                        <dt>Last tx</dt>
+                        <dd className="muted">none this session</dd>
+                      </>
+                    )}
+                  </dl>
+                </Details>
+              </>
             ) : null}
           </Panel>
         </div>

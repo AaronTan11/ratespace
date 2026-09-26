@@ -19,7 +19,8 @@ step changes the later numbers). The app shows 6 decimals; hover a number for th
    If MetaMask was used against an earlier anvil, reset both accounts' activity/nonce data (MetaMask's
    "clear activity" option under Settings → Advanced; the wording varies by version) or the first
    transaction can fail on a stale nonce.
-6. The small "TanStack Router" badge at the bottom left is the dev-mode router devtools; crop it or ignore it.
+6. The small "TanStack Router" badge at the bottom left is the dev-mode router devtools. For a clean
+   recording start the app with it hidden instead: `VITE_HIDE_DEVTOOLS=1 bun run dev:web`.
 
 ## Scene 1: Markets (about 30 s), page `/`
 

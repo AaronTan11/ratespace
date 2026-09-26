@@ -25,6 +25,6 @@ export default defineConfig({
     url: "http://127.0.0.1:3002",
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { VITE_RPC_URL: "http://127.0.0.1:8547", VITE_CHAIN_ID: "31337" },
+    env: { VITE_RPC_URL: "http://127.0.0.1:8547", VITE_CHAIN_ID: "31337", VITE_HIDE_DEVTOOLS: "1" },
   },
 });

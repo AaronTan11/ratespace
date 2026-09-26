@@ -11,6 +11,10 @@ import appCss from "../index.css?url";
 
 export interface RouterAppContext {}
 
+// Router devtools badge: dev only. Hidden in production builds and when VITE_HIDE_DEVTOOLS=1
+// (the e2e run and clean demo recordings: `VITE_HIDE_DEVTOOLS=1 bun run dev:web`).
+const SHOW_DEVTOOLS = !import.meta.env.PROD && import.meta.env.VITE_HIDE_DEVTOOLS !== "1";
+
 export const Route = createRootRouteWithContext<RouterAppContext>()({
   head: () => ({
     meta: [
@@ -59,7 +63,7 @@ function RootDocument() {
           </WalletProvider>
         </QueryClientProvider>
         <Toaster theme="dark" />
-        <TanStackRouterDevtools position="bottom-left" />
+        {SHOW_DEVTOOLS ? <TanStackRouterDevtools position="bottom-left" /> : null}
         <Scripts />
       </body>
     </html>

@@ -5,11 +5,11 @@ import { CHAIN_ID, REFRESH_MS, chain, publicClient } from "@/lib/chain/config";
 import { shortAddress, useWallet } from "@/lib/chain/wallet";
 
 function Mark() {
-  // From the prototype: gold ring, teal core. 16px.
+  // Neutral mark (v2: no chromatic brand colour): white ring, text-2 core. 18px.
   return (
-    <svg width="16" height="16" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <circle cx="13" cy="13" r="11" stroke="var(--gold)" strokeWidth="2.4" />
-      <circle cx="15.5" cy="13" r="5.5" fill="var(--teal)" />
+    <svg width="18" height="18" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <circle cx="13" cy="13" r="11" stroke="var(--text)" strokeWidth="2.4" />
+      <circle cx="15.5" cy="13" r="5.5" fill="var(--text-2)" />
     </svg>
   );
 }
@@ -75,7 +75,7 @@ export default function Header() {
           ))}
         </nav>
         <div className="right">
-          <span className={`rs-chip${rpcTone ? ` ${rpcTone}` : ""}`} title={`RPC chain id vs app chain ${CHAIN_ID}`}>
+          <span className="rs-chip" title={`RPC chain id vs app chain ${CHAIN_ID}`}>
             <span className={`rs-dot${rpcTone ? ` ${rpcTone}` : ""}`} aria-hidden />
             {rpcLabel}
           </span>

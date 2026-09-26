@@ -2,6 +2,8 @@
 pragma solidity 0.8.30;
 
 import { Script } from "forge-std/Script.sol";
+import { console } from "forge-std/console.sol";
+import { VmSafe } from "forge-std/Vm.sol";
 
 import { SepoliaAddresses } from "./SepoliaAddresses.sol";
 
@@ -85,7 +87,14 @@ abstract contract SepoliaDeployment is Script {
         }
     }
 
+    /// @dev `forge script` without --broadcast (ScriptDryRun) writes nothing: a dry run of DeploySepolia or
+    ///   ShipSepolia must not record contracts or orders that were never sent. --broadcast / --resume and
+    ///   forge test (the fork tests) write.
     function _writeDeployment(string memory path, Deployment memory d, OrderRecord[] memory orders) internal {
+        if (vm.isContext(VmSafe.ForgeContext.ScriptDryRun)) {
+            console.log("dry run: deployments file NOT written");
+            return;
+        }
         vm.writeFile(path, _deploymentJson(d, orders));
     }
 

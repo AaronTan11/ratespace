@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { Check } from "lucide-react";
 import { toast } from "sonner";
 import { zeroAddress, type Hash } from "viem";
 
-import { Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
+import { Details, Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
 import { IS_LOCAL_DEMO, REFRESH_MS, publicClient } from "@/lib/chain/config";
@@ -59,7 +60,7 @@ function RateCard({ m }: { m: Market }) {
 
   async function onStep() {
     if (!wallet.address || !wallet.client) {
-      toast.error("Connect the maker wallet first.");
+      toast.error("Connect the liquidity provider's wallet first.");
       return;
     }
     setBusy(true);
@@ -104,24 +105,32 @@ function RateCard({ m }: { m: Market }) {
           <Pair yieldSym={m.key} />
         </td>
         <td>
-          <Hex value={m.feed} />
-        </td>
-        <td className="num r">{q.isError ? "—" : q.data ? <Num value={q.data.rate} /> : <Skel w={72} />}</td>
-        <td className="num r">{q.isError ? "—" : q.data ? <Num value={q.data.out} /> : <Skel w={72} />}</td>
-        <td>
           {q.data ? (
-            <span className={`rs-chip sans ${matches ? "good" : "bad"}`} title={`router.hash(order) now: ${q.data.hash}`}>
-              <span className={`rs-dot ${matches ? "good" : "bad"}`} aria-hidden />
+            <span
+              className={`rs-chip sans ${matches ? "good" : "bad"}`}
+              title={`Same order as shipped. router.hash(order) now: ${q.data.hash}`}
+              aria-label={matches ? "Verified" : "Order changed"}
+            >
+              {matches ? <Check size={12} aria-hidden /> : <span className="rs-dot bad" aria-hidden />}
               {matches ? "matches" : "DOES NOT MATCH"}
             </span>
           ) : q.isError ? null : (
             <Skel w={64} />
           )}
         </td>
+        <td className="num r">{q.isError ? "—" : q.data ? <Num value={q.data.rate} /> : <Skel w={72} />}</td>
+        <td className="num r">{q.isError ? "—" : q.data ? <Num value={q.data.out} unit="WETH" /> : <Skel w={72} />}</td>
         <td className="r" style={IS_LOCAL_DEMO ? undefined : { whiteSpace: "normal", minWidth: 220 }}>
           {IS_LOCAL_DEMO ? (
-            <button type="button" className="rs-btn" onClick={() => void onStep()} disabled={busy || !wallet.address}>
-              {busy ? "Sending…" : "Simulate report +1 bp"}
+            <button
+              type="button"
+              className="rs-btn"
+              aria-label="Simulate report +1 bp"
+              onClick={() => void onStep()}
+              disabled={busy || !wallet.address}
+              title={wallet.address ? undefined : "Connect the liquidity provider's wallet to use this"}
+            >
+              {busy ? "Sending…" : "Simulate an oracle update"}
             </button>
           ) : (
             <span className="muted">Rate comes from Lido's Sepolia oracle; it updates when Lido reports.</span>
@@ -130,25 +139,39 @@ function RateCard({ m }: { m: Market }) {
       </tr>
       {q.isError ? (
         <tr>
-          <td colSpan={6} style={{ height: "auto", padding: "8px 12px" }}>
+          <td colSpan={5} style={{ height: "auto", padding: "8px 12px" }}>
             <QueryError error={q.error} />
           </td>
         </tr>
       ) : null}
       {step ? <StepRow step={step} /> : null}
       <tr className="rs-caption">
-        <td colSpan={6}>
-          <span className="muted">Same order, no re-ship: the strategy hash is unchanged —</span>{" "}
-          <Hex value={m.order.strategyHash} head={10} tail={8} />
-          {q.data ? (
-            <>
-              <span className="muted"> · router.hash(order) now </span>
-              <Hex value={q.data.hash} head={10} tail={8} />{" "}
-              <span className={matches ? "good" : "bad"}>{matches ? "(matches)" : "(DOES NOT MATCH)"}</span>
-              <span className="muted"> · block </span>
-              <span className="rs-num soft">{q.data.blockNumber.toString()}</span>
-            </>
-          ) : null}
+        <td colSpan={5}>
+          <Details summary="Technical details" style={{ fontSize: 12 }}>
+            <dl className="rs-kv" style={{ maxWidth: 720 }}>
+              <dt>Oracle feed</dt>
+              <dd>
+                <Hex value={m.feed} />
+              </dd>
+              <dt>Order id (strategy hash, as shipped)</dt>
+              <dd>
+                <Hex value={m.order.strategyHash} head={10} tail={8} />
+              </dd>
+              <dt>router.hash(order) now</dt>
+              <dd>
+                {q.data ? (
+                  <>
+                    <Hex value={q.data.hash} head={10} tail={8} />
+                    <span className={matches ? "good" : "bad"}>{matches ? "(same)" : "(DIFFERENT)"}</span>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </dd>
+              <dt>Block</dt>
+              <dd>{q.data ? q.data.blockNumber.toString() : "—"}</dd>
+            </dl>
+          </Details>
         </td>
       </tr>
     </tbody>
@@ -168,35 +191,57 @@ function StepRow({ step }: { step: Step }) {
   const unchanged = step.before.hash === step.after.hash;
   return (
     <tr className="rs-step">
-      <td colSpan={6}>
-        <div className="rs-step-grid">
-          <span className="rs-eyebrow">Rate</span>
-          <span className="rs-num">
+      <td colSpan={5}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            padding: "12px 0 4px",
+            borderTop: "1px solid var(--hairline)",
+            fontSize: 13,
+            color: "var(--text-2)",
+          }}
+        >
+          <span>Rate</span>
+          <span className="rs-num" style={{ color: "var(--text)" }}>
             <Num value={step.before.rate} /> <span className="muted">→</span> <Num value={step.after.rate} />
           </span>
           <Delta before={step.before.rate} after={step.after.rate} hero />
-
-          <span className="rs-eyebrow">Quote</span>
-          <span className="rs-num">
+          <span className="muted">·</span>
+          <span>Your quote</span>
+          <span className="rs-num" style={{ color: "var(--text)" }}>
             <Num value={step.before.out} /> <span className="muted">→</span> <Num value={step.after.out} />
           </span>
-          <Delta before={step.before.out} after={step.after.out} />
-
-          <span className="rs-eyebrow">Hash</span>
-          <span className="rs-num">
-            <Hex value={step.before.hash} /> <span className="muted">→</span> <Hex value={step.after.hash} />
-          </span>
+          <span className="muted">·</span>
+          <span>Order id</span>
           {unchanged ? <span className="muted">unchanged</span> : <span className="rs-chip sans bad">CHANGED</span>}
-
-          <span className="rs-eyebrow">Tx</span>
-          <span className="rs-num">
-            <Hex value={step.tx} head={10} tail={8} />
-          </span>
-          <span className="rs-meta">
-            blocks <span className="rs-num soft">{step.before.blockNumber.toString()}</span> →{" "}
-            <span className="rs-num soft">{step.after.blockNumber.toString()}</span>
-          </span>
         </div>
+        <Details summary="Technical details" style={{ fontSize: 12 }}>
+          <dl className="rs-kv" style={{ maxWidth: 720 }}>
+            <dt>Quote change</dt>
+            <dd>
+              <Delta before={step.before.out} after={step.after.out} />
+            </dd>
+            <dt>router.hash before</dt>
+            <dd>
+              <Hex value={step.before.hash} />
+            </dd>
+            <dt>router.hash after</dt>
+            <dd>
+              <Hex value={step.after.hash} />
+            </dd>
+            <dt>Oracle update tx</dt>
+            <dd>
+              <Hex value={step.tx} head={10} tail={8} />
+            </dd>
+            <dt>Blocks</dt>
+            <dd>
+              {step.before.blockNumber.toString()} → {step.after.blockNumber.toString()}
+            </dd>
+          </dl>
+        </Details>
       </td>
     </tr>
   );
@@ -205,37 +250,48 @@ function StepRow({ step }: { step: Step }) {
 function RateComponent() {
   return (
     <main className="rs-page">
-      <PageHead eyebrow="Rate" title="Watch the peg move" />
+      <PageHead
+        eyebrow="Live rate"
+        title="Rates update themselves."
+        sub="When an oracle reports a new rate, every quote moves with it. Nothing is re-posted."
+      />
       {!loaded.deployed ? (
         <NotDeployed />
       ) : (
-        <Panel
-          title="Feeds"
-          meta={IS_LOCAL_DEMO ? "anvil · DemoRateFeed, maker can step +1 bp" : "Lido oracle · read only"}
-          bodyClass="rs-table-wrap"
-        >
-          <table className="rs-table">
-            <thead>
-              <tr>
-                <th scope="col">Market</th>
-                <th scope="col">Feed</th>
-                <th scope="col" className="r">
-                  Feed rate()
-                </th>
-                <th scope="col" className="r">
-                  Quote 1 unit → WETH
-                </th>
-                <th scope="col">router.hash</th>
-                <th scope="col" className="r">
-                  {IS_LOCAL_DEMO ? "Simulate" : "Source"}
-                </th>
-              </tr>
-            </thead>
-            {markets.map((m) => (
-              <RateCard key={m.key} m={m} />
-            ))}
-          </table>
-        </Panel>
+        <>
+          <Panel
+            title="Live rates"
+            meta={IS_LOCAL_DEMO ? "demo oracle · refreshes every " + REFRESH_MS / 1000 + "s" : "Lido oracle · read only"}
+            bodyClass="rs-table-wrap"
+          >
+            <table className="rs-table">
+              <thead>
+                <tr>
+                  <th scope="col">Token</th>
+                  <th scope="col">Same order</th>
+                  <th scope="col" className="r">
+                    Oracle rate
+                  </th>
+                  <th scope="col" className="r">
+                    You'd get for 1 token
+                  </th>
+                  <th scope="col" className="r">
+                    {IS_LOCAL_DEMO ? "Try it" : "Source"}
+                  </th>
+                </tr>
+              </thead>
+              {markets.map((m) => (
+                <RateCard key={m.key} m={m} />
+              ))}
+            </table>
+          </Panel>
+          {IS_LOCAL_DEMO ? (
+            <p className="rs-meta" style={{ margin: 0, fontSize: 13, color: "var(--text-2)", maxWidth: 720 }}>
+              This button plays the role of the oracle for the demo: it moves the rate by 0.01% so you can watch quotes
+              follow it. The order id does not change.
+            </p>
+          ) : null}
+        </>
       )}
     </main>
   );

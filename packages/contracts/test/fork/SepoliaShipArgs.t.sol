@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {IAqua} from "@aqua-v1/src/interfaces/IAqua.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISwapVM} from "@swap-vm-v1/interfaces/ISwapVM.sol";
 import {MakerTraits} from "@swap-vm-v1/libs/MakerTraits.sol";
 import {ISwapVM as ISwapVMV0} from "@swap-vm/interfaces/ISwapVM.sol";
@@ -237,6 +238,34 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
     /// @dev Fallback path: RateSpaceAquaRouter, MovingPegSwap 0x59
     function test_ShipArgs_RateSpaceRouter() public onFork {
         _shipAndCheck(false, "shipargs-rs");
+    }
+
+    /// @dev The maker-balance guards: a maker with neither token makes ShipSepolia.run() revert on WETH; a maker with
+    ///   WETH but no wstETH reverts on wstETH (nothing shipped, file keeps orders: [])
+    function test_ShipArgs_MakerBalanceGuards() public onFork {
+        string memory path = _testPath("shipargs-balance");
+        address b = _broadcaster();
+        _deployRun(path);
+        (Deployment memory d,) = _readDeployment(path);
+        // The default broadcaster holds real Sepolia WETH at the fork block: zero both balances first
+        deal(d.weth, b, 0);
+        deal(d.wstEth, b, 0);
+        assertEq(IERC20(d.weth).balanceOf(b), 0, "maker starts without WETH");
+        assertEq(IERC20(d.wstEth).balanceOf(b), 0, "maker starts without wstETH");
+
+        ShipSepolia s = _shipScript(path, true);
+        vm.expectRevert(bytes("ShipSepolia: maker WETH balance < SHIP_WETH_DEPOSIT"));
+        s.run();
+
+        // run() reverted between its startBroadcast and stopBroadcast: the cheatcode broadcast is still on
+        vm.stopBroadcast();
+        deal(d.weth, b, FUND_ETH);
+        vm.expectRevert(bytes("ShipSepolia: maker wstETH balance < SHIP_WSTETH_DEPOSIT"));
+        s.run();
+
+        (, OrderRecord[] memory orders) = _readDeployment(path);
+        assertEq(orders.length, 0, "nothing recorded");
+        vm.removeFile(path);
     }
 
     /// @dev The builder-opcode guard: a builder whose EXTRUCTION_OPCODE() differs from the Sepolia router's

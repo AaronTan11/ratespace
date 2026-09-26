@@ -2,6 +2,10 @@
 pragma solidity 0.8.30;
 
 import {IAqua} from "@aqua-v1/src/interfaces/IAqua.sol";
+import {ISwapVM} from "@swap-vm-v1/interfaces/ISwapVM.sol";
+import {MakerTraits} from "@swap-vm-v1/libs/MakerTraits.sol";
+import {ISwapVM as ISwapVMV0} from "@swap-vm/interfaces/ISwapVM.sol";
+import {MakerTraits as MakerTraitsV0} from "@swap-vm/libs/MakerTraits.sol";
 
 import {IRateSpaceOrderBuilder} from "../../src/demo/IRateSpaceOrderBuilder.sol";
 import {IRateProvider} from "../../src/rate-providers/IRateProvider.sol";
@@ -24,6 +28,15 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
     uint8 internal constant OP_EXTRUCTION = 0x20;
     uint8 internal constant OP_MOVING_PEG_SWAP = 0x59;
     uint256 internal constant MPS_LEN = 202;
+    // 1inch router (swap-vm v1.0.2 AquaOpcodes indexes, as RateSpaceOrderBuilder's SALT_OPCODE = 20 and
+    // FLAT_FEE_AMOUNT_IN_OPCODE = 21): Salt 0x14, FlatFeeAmountIn 0x15 (uint32 fee on 1e9)
+    uint8 internal constant OP_SALT_V1 = 0x14;
+    uint8 internal constant OP_FEE_V1 = 0x15;
+    uint256 internal constant EXP_FEE_1E9 = 500000;
+    // RateSpaceAquaRouter (swap-vm 3b3da7d OpcodeList: /* 02 */ Salt, /* 70 */ FeeFlatIn, uint24 fee on 1e7)
+    uint8 internal constant OP_SALT_V0 = 0x02;
+    uint8 internal constant OP_FEE_V0 = 0x70;
+    uint256 internal constant EXP_FEE_1E7 = 5000;
 
     struct Mps {
         uint256 x0;
@@ -74,6 +87,80 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
         m.band = uint16(_word(program, o + 200) >> 240);
     }
 
+    /// @dev The program's opcodes in order; the [opcode][len][args] walk must end exactly at program.length
+    function _opcodes(bytes memory program) internal pure returns (uint8[] memory ops) {
+        uint8[] memory tmp = new uint8[](program.length / 2 + 1);
+        uint256 n;
+        uint256 i;
+        while (i < program.length) {
+            require(i + 2 <= program.length, "truncated instruction header");
+            tmp[n++] = uint8(program[i]);
+            i += 2 + uint8(program[i + 1]);
+        }
+        require(i == program.length, "instruction overruns program");
+        ops = new uint8[](n);
+        for (uint256 k = 0; k < n; k++) {
+            ops[k] = tmp[k];
+        }
+    }
+
+    /// @dev Fee binding: order 1 (no fee) = [curve, salt]; order 2 (fee) = [flat fee in, curve, salt] with the
+    ///   owner's fee (500000 on 1e9 for the 1inch router, 5000 on 1e7 for RateSpaceAquaRouter)
+    function _checkFee(bytes memory program, bool oneInch, bool withFee, string memory tag) internal pure {
+        uint8 curve = oneInch ? OP_EXTRUCTION : OP_MOVING_PEG_SWAP;
+        uint8 salt = oneInch ? OP_SALT_V1 : OP_SALT_V0;
+        uint8 fee = oneInch ? OP_FEE_V1 : OP_FEE_V0;
+        uint8[] memory ops = _opcodes(program);
+        uint256 feeCount;
+        for (uint256 k = 0; k < ops.length; k++) {
+            if (ops[k] == fee) feeCount++;
+        }
+        assertEq(feeCount, withFee ? 1 : 0, string.concat(tag, ": fee instruction count"));
+        assertEq(ops.length, withFee ? 3 : 2, string.concat(tag, ": instruction count"));
+        uint256 o = withFee ? 1 : 0;
+        assertEq(ops[o], curve, string.concat(tag, ": curve instruction"));
+        assertEq(ops[o + 1], salt, string.concat(tag, ": salt instruction last"));
+        if (!withFee) return;
+        assertEq(ops[0], fee, string.concat(tag, ": fee instruction first"));
+        uint256 argLen = uint8(program[1]);
+        assertEq(argLen, oneInch ? 4 : 3, string.concat(tag, ": fee args length"));
+        uint256 feeBps = _word(program, 2) >> (256 - 8 * argLen);
+        assertEq(feeBps, oneInch ? EXP_FEE_1E9 : EXP_FEE_1E7, string.concat(tag, ": feeBps"));
+    }
+
+    /// @dev Record binding: the order the app rebuilds from the JSON {maker, traits, data} hashes, on its own
+    ///   router, to the JSON strategyHash; that strategy is live in Aqua with both tokens; `data` carries exactly
+    ///   the JSON program (v1.0.2 hook-less data == program; 3b3da7d data == tokenA ++ tokenB ++ program)
+    function _checkRecord(OrderRecord memory r, Deployment memory d, address router, bool oneInch, address maker)
+        internal
+        view
+    {
+        address m = vm.parseAddress(r.maker);
+        assertEq(m, maker, "JSON maker == broadcaster");
+        uint256 traits = vm.parseUint(r.traits);
+        bytes memory data = vm.parseBytes(r.data);
+        bytes memory program = vm.parseBytes(r.program);
+        bytes32 h = vm.parseBytes32(r.strategyHash);
+        bytes32 rebuilt;
+        if (oneInch) {
+            ISwapVM.Order memory order = ISwapVM.Order(m, MakerTraits.wrap(traits), data);
+            rebuilt = ISwapVM(router).hash(order);
+            assertEq(rebuilt, h, "router.hash(JSON order) == JSON strategyHash");
+            assertEq(keccak256(abi.encode(order)), h, "keccak(abi.encode(JSON order)) == strategyHash");
+            assertEq(data, program, "JSON data == JSON program (v1.0.2, no hooks)");
+        } else {
+            ISwapVMV0.Order memory order = ISwapVMV0.Order(m, MakerTraitsV0.wrap(traits), data);
+            rebuilt = ISwapVMV0(router).hash(order);
+            assertEq(rebuilt, h, "router.hash(JSON order) == JSON strategyHash");
+            assertEq(keccak256(abi.encode(order)), h, "keccak(abi.encode(JSON order)) == strategyHash");
+            assertEq(data, abi.encodePacked(d.wstEth, d.weth, program), "JSON data == wstETH ++ WETH ++ JSON program");
+        }
+        (, uint8 nWst) = IAqua(d.aqua).rawBalances(m, router, h, d.wstEth);
+        (, uint8 nWeth) = IAqua(d.aqua).rawBalances(m, router, h, d.weth);
+        assertEq(nWst, 2, "Aqua strategy live (wstETH side, 2 tokens)");
+        assertEq(nWeth, 2, "Aqua strategy live (WETH side, 2 tokens)");
+    }
+
     function _shipAndCheck(bool oneInch, string memory name) internal {
         string memory path = _testPath(name);
         address b = _broadcaster();
@@ -103,6 +190,8 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
             assertEq(depWst, uint256(depWeth) * 1e18 / liveRate, "wstETH deposit == depWeth * 1e18 / rate");
 
             bytes memory program = vm.parseBytes(r.program);
+            _checkFee(program, oneInch, k == 1, k == 0 ? "order 1" : "order 2");
+            _checkRecord(r, d, router, oneInch, b);
             Mps memory m = _decode(program, _mpsOffset(program, oneInch, d.extruction));
             assertEq(m.refRateLt, liveRate, "refRateLt == live wstETH rate");
             assertEq(m.refRateGt, 1e18, "refRateGt == 1e18 (WETH)");

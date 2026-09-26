@@ -429,7 +429,7 @@ contract DeployDemoTest is Test {
     }
 
     function test_DeployDemo_RunOrderTable() public {
-        string memory path = "deployments/test-demo-order-table.json";
+        string memory path = _uniquePath("order-table");
         DeployDemo s = new DeployDemo();
         s.setDeploymentsPath(path);
         vm.recordLogs();
@@ -495,10 +495,18 @@ contract DeployDemoTest is Test {
         address[3] feeds;
     }
 
-    /// @dev Runs the script into its own deployments/test-demo-<name>.json (never the tracked 31337.json, so
+    /// @dev deployments/test-demo-<name>-<unixTime ms>-<random>.json (gitignored deployments/test-*.json):
+    ///   unique per test AND per forge process, so two `forge test` runs at once never delete each other's file
+    function _uniquePath(string memory name) internal returns (string memory) {
+        return string.concat(
+            "deployments/test-demo-", name, "-", vm.toString(vm.unixTime()), "-", vm.toString(vm.randomUint()), ".json"
+        );
+    }
+
+    /// @dev Runs the script into its own deployments/test-demo-<name>-<unique>.json (never the tracked 31337.json, so
     ///   parallel tests never read a half-written shared file) and deletes it
     function _runScript(string memory name) internal returns (RunEnv memory e) {
-        string memory path = string.concat("deployments/test-demo-", name, ".json");
+        string memory path = _uniquePath(name);
         DeployDemo s = new DeployDemo();
         s.setDeploymentsPath(path);
         s.run();

@@ -57,9 +57,12 @@ abstract contract SepoliaScriptBase is Test, SepoliaDeployment {
         vm.stopBroadcast();
     }
 
-    /// @dev Throw-away deployments file for one test (gitignored deployments/test-*.json)
+    /// @dev Throw-away deployments file for one test (gitignored deployments/test-*.json), unique per test AND
+    ///   per forge process (unixTime ms + random), so two `forge test` runs at once never share a file
     function _testPath(string memory name) internal returns (string memory path) {
-        path = string.concat("deployments/test-", name, ".json");
+        path = string.concat(
+            "deployments/test-", name, "-", vm.toString(vm.unixTime()), "-", vm.toString(vm.randomUint()), ".json"
+        );
         if (vm.exists(path)) vm.removeFile(path);
     }
 

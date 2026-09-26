@@ -290,7 +290,10 @@ contract SepoliaDemoFlowTest is Test, ShipSepolia {
             rateProviderWstEth: address(0x1005)
         });
         vm.chainId(SepoliaAddresses.CHAIN_ID);
-        string memory path = "deployments/11155111.roundtrip-test.json";
+        // Unique per forge process (gitignored deployments/test-*.json): parallel runs never share the file
+        string memory path = string.concat(
+            "deployments/test-roundtrip-", vm.toString(vm.unixTime()), "-", vm.toString(vm.randomUint()), ".json"
+        );
 
         _writeDeployment(path, d, new OrderRecord[](0));
         (Deployment memory r0, OrderRecord[] memory o0) = _readDeployment(path);

@@ -26,6 +26,12 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
     ],
     links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap",
+      },
       {
         rel: "stylesheet",
         href: appCss,
@@ -46,13 +52,13 @@ function RootDocument() {
       <body>
         <QueryClientProvider client={queryClient}>
           <WalletProvider>
-            <div className="grid h-svh grid-rows-[auto_1fr]">
+            <div className="grid min-h-svh grid-rows-[auto_1fr] content-start">
               <Header />
               <Outlet />
             </div>
           </WalletProvider>
         </QueryClientProvider>
-        <Toaster richColors />
+        <Toaster theme="dark" />
         <TanStackRouterDevtools position="bottom-left" />
         <Scripts />
       </body>

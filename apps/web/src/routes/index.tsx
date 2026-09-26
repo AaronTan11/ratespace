@@ -1,17 +1,15 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@ratespace/ui/components/card";
-import { Skeleton } from "@ratespace/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { formatUnits } from "viem";
-
+import { Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
+import type { ReactNode } from "react";
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
 import { rawBalances } from "@/lib/chain/aqua";
 import { REFRESH_MS, publicClient } from "@/lib/chain/config";
 import { loaded, marketsOf } from "@/lib/chain/deployments";
 import { readRate } from "@/lib/chain/feeds";
-import { formatFixed } from "@/lib/chain/math";
 import { balanceOf } from "@/lib/chain/tokens";
+import { shortHex } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
   component: HomeComponent,
@@ -49,6 +47,11 @@ async function readHome() {
   return { blockNumber, maker, walletWeth, rows, totalVirtualWeth };
 }
 
+/** Skeleton while loading; a dash once the read has failed (the error is shown once, above the table). */
+function Wait({ w, failed }: { w: number; failed: boolean }): ReactNode {
+  return failed ? <span className="muted">—</span> : <Skel w={w} />;
+}
+
 function HomeComponent() {
   const q = useQuery({
     queryKey: ["home", d.addresses.aqua],
@@ -56,69 +59,101 @@ function HomeComponent() {
     refetchInterval: REFRESH_MS,
     enabled: loaded.deployed,
   });
+  const maker = markets[0]?.order.maker;
 
   return (
-    <div className="container mx-auto max-w-4xl space-y-4 px-4 py-6">
-      <h1 className="text-lg font-semibold">One ETH balance, many staked-ETH markets</h1>
+    <main className="rs-page">
+      <PageHead eyebrow="Markets" title="One ETH balance, many staked-ETH markets" />
       {!loaded.deployed ? (
         <NotDeployed />
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Maker wallet</CardTitle>
-              <CardDescription className="font-mono break-all">{markets[0]?.order.maker}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {q.isError ? (
-                <QueryError error={q.error} />
-              ) : q.data ? (
-                <p className="text-sm">
-                  <span className="font-mono">{formatUnits(q.data.walletWeth, 18)}</span> WETH in the wallet
-                  backs <span className="font-mono">{formatUnits(q.data.totalVirtualWeth, 18)}</span> WETH of
-                  quotes
-                  <span className="block text-xs text-muted-foreground">
-                    block {q.data.blockNumber.toString()}
-                  </span>
-                </p>
-              ) : (
-                <Skeleton className="h-5 w-72" />
-              )}
-            </CardContent>
-          </Card>
-          <div className="grid gap-4 md:grid-cols-3">
-            {markets.map((m) => {
-              const row = q.data?.rows.find((r) => r.key === m.key);
-              return (
-                <Card key={m.key}>
-                  <CardHeader>
-                    <CardTitle>{m.key} / WETH</CardTitle>
-                    <CardDescription className="font-mono break-all">{m.order.strategyHash}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div>
-                      <div className="text-muted-foreground">Feed rate()</div>
-                      {row ? (
-                        <div className="font-mono text-sm">{formatFixed(row.rate, 18, 6)}</div>
-                      ) : (
-                        <Skeleton className="h-5 w-24" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Virtual WETH backing (Aqua)</div>
-                      {row ? (
-                        <div className="font-mono text-sm">{formatUnits(row.virtualWeth, 18)}</div>
-                      ) : (
-                        <Skeleton className="h-5 w-24" />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+          <div className="rs-strip" aria-label="Summary">
+            <div>
+              <span className="rs-eyebrow">Maker wallet WETH</span>
+              <span className="v">{q.data ? <Num value={q.data.walletWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}</span>
+              <span className="rs-meta">{maker ? <Hex value={maker} /> : "no maker"}</span>
+            </div>
+            <div>
+              <span className="rs-eyebrow">Total virtual backing</span>
+              <span className="v">
+                {q.data ? <Num value={q.data.totalVirtualWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}
+              </span>
+              <span className="rs-meta">
+                Aqua rawBalances across <span className="rs-num">{markets.length}</span> orders
+              </span>
+            </div>
+            <div>
+              <span className="rs-eyebrow">Block</span>
+              <span className="v">{q.data ? q.data.blockNumber.toString() : <Wait w={64} failed={q.isError} />}</span>
+              <span className="rs-meta">every read pinned to this block</span>
+            </div>
           </div>
+
+          {q.isError ? (
+            <div className="rs-notice bad">
+              <QueryError error={q.error} />
+            </div>
+          ) : q.data ? (
+            <p className="rs-statement" style={{ margin: 0 }}>
+              <Num value={q.data.walletWeth} unit="WETH" /> in the wallet backs
+              <span className="n gold">
+                <Num value={q.data.totalVirtualWeth} unit="WETH" />
+              </span>
+              of quotes
+            </p>
+          ) : null}
+
+          <Panel
+            title="Shared-backing orders"
+            meta={`${markets.length} markets · one maker wallet · refresh ${REFRESH_MS / 1000}s`}
+            bodyClass="rs-table-wrap"
+          >
+            <table className="rs-table">
+              <thead>
+                <tr>
+                  <th scope="col">Market</th>
+                  <th scope="col" className="r">
+                    Live rate
+                  </th>
+                  <th scope="col" className="r">
+                    Virtual WETH backing
+                  </th>
+                  <th scope="col">Strategy hash</th>
+                  <th scope="col">Router</th>
+                </tr>
+              </thead>
+              <tbody>
+                {markets.map((m) => {
+                  const row = q.data?.rows.find((r) => r.key === m.key);
+                  return (
+                    <tr key={m.key}>
+                      <td>
+                        <Pair yieldSym={m.key} />
+                      </td>
+                      <td className="num r">{row ? <Num value={row.rate} /> : <Wait w={72} failed={q.isError} />}</td>
+                      <td className="num r">{row ? <Num value={row.virtualWeth} /> : <Wait w={72} failed={q.isError} />}</td>
+                      <td>
+                        <Hex value={m.order.strategyHash} />
+                      </td>
+                      <td>
+                        <span className="rs-chip" title={m.router}>
+                          {m.router.toLowerCase() === d.addresses.ourRouter?.toLowerCase()
+                            ? "RateSpaceAquaRouter"
+                            : m.router.toLowerCase() === d.addresses.router.toLowerCase()
+                              ? "AquaSwapVMRouter"
+                              : "router"}
+                          <span className="muted">{shortHex(m.router)}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Panel>
         </>
       )}
-    </div>
+    </main>
   );
 }

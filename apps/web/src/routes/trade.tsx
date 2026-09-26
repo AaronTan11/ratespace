@@ -1,25 +1,23 @@
-import { Button } from "@ratespace/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@ratespace/ui/components/card";
-import { Input } from "@ratespace/ui/components/input";
-import { Label } from "@ratespace/ui/components/label";
-import { Skeleton } from "@ratespace/ui/components/skeleton";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { formatUnits, parseUnits, zeroAddress } from "viem";
 
+import { Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
 import { txUrl } from "@/lib/chain/chains";
 import { REFRESH_MS, chain, publicClient } from "@/lib/chain/config";
 import { loaded, marketsOf, toOrderTuple, type YieldKey } from "@/lib/chain/deployments";
 import { readRate } from "@/lib/chain/feeds";
-import { formatFixed, ratio1e18 } from "@/lib/chain/math";
+import { rawBalances } from "@/lib/chain/aqua";
+import { formatDeltaBps, ratio1e18 } from "@/lib/chain/math";
 import { buildTakerData } from "@/lib/chain/orderBuilder";
 import { quote, swap, type SwapResult } from "@/lib/chain/router";
-import { decimals } from "@/lib/chain/tokens";
+import { allowance, balanceOf, decimals } from "@/lib/chain/tokens";
 import { useWallet } from "@/lib/chain/wallet";
+import { shortHex } from "@/lib/format";
 
 export const Route = createFileRoute("/trade")({
   component: TradeComponent,
@@ -43,16 +41,18 @@ function parseAmount(s: string, dec: number): bigint | null {
 function TxLine({ label, hash }: { label: string; hash: string }) {
   const url = txUrl(chain, hash);
   return (
-    <div>
-      {label} tx{" "}
-      {url ? (
-        <a className="font-mono underline" href={url} target="_blank" rel="noreferrer">
-          {hash}
-        </a>
-      ) : (
-        <span className="font-mono">{hash}</span>
-      )}
-    </div>
+    <>
+      <dt>{label} tx</dt>
+      <dd>
+        {url ? (
+          <a className="rs-link" href={url} target="_blank" rel="noreferrer" title={hash}>
+            {shortHex(hash, 10, 8)}
+          </a>
+        ) : (
+          <Hex value={hash} head={10} tail={8} />
+        )}
+      </dd>
+    </>
   );
 }
 
@@ -111,6 +111,37 @@ function TradeComponent() {
     retry: false,
   });
 
+  // Display-only reads: wallet balance (for Max), allowance (inline approve state), Aqua backing.
+  const acct = useQuery({
+    queryKey: ["ticket-account", tokenIn, market?.router, wallet.address],
+    queryFn: async () => {
+      const [bal, allow] = await Promise.all([
+        balanceOf(publicClient, tokenIn!, wallet.address!),
+        allowance(publicClient, tokenIn!, wallet.address!, market!.router),
+      ]);
+      return { bal, allow };
+    },
+    enabled: loaded.deployed && !!market && !!tokenIn && !!wallet.address,
+    refetchInterval: REFRESH_MS,
+    retry: false,
+  });
+  const backing = useQuery({
+    queryKey: ["ticket-backing", key],
+    queryFn: () =>
+      rawBalances(
+        publicClient,
+        d.addresses.aqua,
+        market!.order.maker,
+        market!.router,
+        market!.order.strategyHash,
+        market!.order.tokenWeth,
+      ),
+    enabled: loaded.deployed && !!market,
+    refetchInterval: REFRESH_MS,
+    retry: false,
+  });
+  const needsApprove = acct.data !== undefined && amount !== null && acct.data.allow < amount;
+
   async function onSwap() {
     if (!market || !tokenIn || !tokenOut || amount === null || !decs.data) return;
     if (!wallet.address || !wallet.client) {
@@ -149,87 +180,200 @@ function TradeComponent() {
     }
   }
 
+  const swapLabel = busy
+    ? needsApprove
+      ? "Approving, then swapping…"
+      : "Swapping…"
+    : wallet.address
+      ? needsApprove
+        ? "Approve and swap"
+        : "Swap"
+      : "Connect wallet to swap";
+
   return (
-    <div className="container mx-auto max-w-xl space-y-4 px-4 py-6">
-      <h1 className="text-lg font-semibold">Trade</h1>
+    <main className="rs-page">
+      <PageHead eyebrow="Trade" title="Swap exact in" />
       {!loaded.deployed ? (
         <NotDeployed />
       ) : markets.length === 0 ? (
-        <p className="text-muted-foreground">
+        <div className="rs-notice">
+          <span className="t">No markets</span>
           The deployments file ({loaded.source}) has no no-fee order for any yield token.
-        </p>
+        </div>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Swap (exact in)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
+        <div className="rs-cols">
+          <section className="rs-panel" aria-label="Order ticket">
+            <div className="rs-tabs" role="group" aria-label="Market">
               {markets.map((m) => (
-                <Button key={m.key} variant={m.key === key ? "default" : "outline"} onClick={() => setKey(m.key)}>
+                <button key={m.key} type="button" aria-pressed={m.key === key} onClick={() => setKey(m.key)}>
+                  <span className="rs-dot teal" aria-hidden />
                   {m.key}
-                </Button>
+                </button>
               ))}
             </div>
-            <div className="flex gap-2">
-              <Button variant={dir === "exit" ? "default" : "outline"} onClick={() => setDir("exit")}>
-                Exit: {key} → WETH
-              </Button>
-              <Button variant={dir === "enter" ? "default" : "outline"} onClick={() => setDir("enter")}>
-                Enter: WETH → {key}
-              </Button>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="amount">Amount in ({symIn})</Label>
-              <Input
-                id="amount"
-                inputMode="decimal"
-                value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value.trim())}
-              />
-              {decs.data && amount === null ? (
-                <p className="text-destructive">Enter a positive amount with at most {decs.data.in} decimals.</p>
-              ) : null}
-            </div>
-            <div className="space-y-1 border p-3">
-              {q.isError ? (
-                <QueryError error={q.error} />
-              ) : q.data && decs.data ? (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">You receive</span>
-                    <span className="font-mono">
-                      {formatUnits(q.data.amountOut, decs.data.out)} {symOut}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Implied WETH per {key}</span>
-                    <span className="font-mono">{q.data.implied === null ? "n/a" : formatUnits(q.data.implied, 18)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Feed rate()</span>
-                    <span className="font-mono">{formatFixed(q.data.rate, 18, 18)}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">block {q.data.blockNumber.toString()}</div>
-                </>
-              ) : amount === null ? (
-                <span className="text-muted-foreground">Enter an amount to quote.</span>
-              ) : (
-                <Skeleton className="h-16 w-full" />
-              )}
-            </div>
-            <Button className="w-full" onClick={() => void onSwap()} disabled={busy || !q.data || !wallet.address}>
-              {busy ? "Swapping…" : wallet.address ? "Swap" : "Connect wallet to swap"}
-            </Button>
-            {last ? (
-              <div className="space-y-1 text-xs break-all text-muted-foreground">
-                {last.approveTx ? <TxLine label="approve" hash={last.approveTx} /> : null}
-                <TxLine label="swap" hash={last.swapTx} />
+            <div className="rs-panel-body" style={{ gap: 16 }}>
+              <div className="rs-seg" role="group" aria-label="Direction">
+                <button type="button" aria-pressed={dir === "exit"} onClick={() => setDir("exit")}>
+                  Exit: {key} → WETH
+                </button>
+                <button type="button" aria-pressed={dir === "enter"} onClick={() => setDir("enter")}>
+                  Enter: WETH → {key}
+                </button>
               </div>
+
+              <div className="rs-field">
+                <div className="rs-field-top">
+                  <label htmlFor="amount" className="rs-eyebrow">
+                    Amount in ({symIn})
+                  </label>
+                  <span className="rs-meta">
+                    Balance{" "}
+                    {acct.data && decs.data ? (
+                      <Num value={acct.data.bal} decimals={decs.data.in} />
+                    ) : (
+                      <span className="rs-num">—</span>
+                    )}
+                  </span>
+                </div>
+                <div className="rs-input" data-invalid={!!decs.data && amount === null}>
+                  <input
+                    id="amount"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={amountStr}
+                    onChange={(e) => setAmountStr(e.target.value.trim())}
+                  />
+                  <span className="sym">
+                    <span className={`rs-dot ${dir === "exit" ? "teal" : "weth"}`} aria-hidden />
+                    {symIn}
+                  </span>
+                  <button
+                    type="button"
+                    className="rs-btn sm"
+                    disabled={!acct.data || !decs.data}
+                    onClick={() => acct.data && decs.data && setAmountStr(formatUnits(acct.data.bal, decs.data.in))}
+                  >
+                    Max
+                  </button>
+                </div>
+                {decs.data && amount === null ? (
+                  <p className="rs-error" style={{ margin: 0 }}>
+                    Enter a positive amount with at most {decs.data.in} decimals.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="rs-quote" aria-live="polite">
+                {decs.isError || q.isError ? (
+                  <div style={{ padding: "8px 0" }}>
+                    <QueryError error={decs.isError ? decs.error : q.error} />
+                  </div>
+                ) : q.data && decs.data ? (
+                  <>
+                    <div className="receive">
+                      <span className="rs-eyebrow">You receive</span>
+                      <span className="v">
+                        <Num value={q.data.amountOut} decimals={decs.data.out} unit={symOut} />
+                      </span>
+                    </div>
+                    <dl className="rs-kv">
+                      <dt>Implied WETH per {key}</dt>
+                      <dd>{q.data.implied === null ? "n/a" : <Num value={q.data.implied} />}</dd>
+                      <dt>Feed rate()</dt>
+                      <dd>
+                        <Num value={q.data.rate} />
+                      </dd>
+                      <dt>Quote vs feed</dt>
+                      <dd>
+                        {q.data.implied === null || q.data.rate === 0n
+                          ? "n/a"
+                          : `${formatDeltaBps(q.data.rate, q.data.implied)} bps`}
+                      </dd>
+                      <dt>Block</dt>
+                      <dd>{q.data.blockNumber.toString()}</dd>
+                    </dl>
+                  </>
+                ) : amount === null ? (
+                  <div className="muted" style={{ padding: "8px 0" }}>
+                    Enter an amount to quote.
+                  </div>
+                ) : (
+                  <div style={{ padding: "12px 0", display: "grid", gap: 8 }}>
+                    <Skel w={160} />
+                    <Skel w={220} />
+                  </div>
+                )}
+              </div>
+
+              {wallet.address && acct.data && amount !== null ? (
+                <div className="rs-inline-note">
+                  <span className={`rs-dot${needsApprove ? "" : " good"}`} aria-hidden />
+                  {needsApprove
+                    ? `Needs approval: the swap first sends approve(router, amount) on ${symIn}.`
+                    : `${symIn} allowance covers this amount; one transaction.`}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                className="rs-btn-primary"
+                onClick={() => void onSwap()}
+                disabled={busy || !q.data || !wallet.address}
+              >
+                {swapLabel}
+              </button>
+            </div>
+          </section>
+
+          <Panel title="Market" meta={market ? <Pair yieldSym={market.key} /> : null}>
+            {market ? (
+              <dl className="rs-kv">
+                <dt>Feed rate()</dt>
+                <dd>{q.data ? <Num value={q.data.rate} /> : amount === null || q.isError ? "—" : <Skel w={80} />}</dd>
+                <dt>Virtual WETH backing (Aqua)</dt>
+                <dd>
+                  {backing.isError ? (
+                    <span className="bad">read failed</span>
+                  ) : backing.data ? (
+                    <Num value={backing.data.balance} unit="WETH" />
+                  ) : (
+                    <Skel w={80} />
+                  )}
+                </dd>
+                <dt>Order hash</dt>
+                <dd>{q.data ? <Hex value={q.data.orderHash} /> : amount === null || q.isError ? "—" : <Skel w={120} />}</dd>
+                <dt>Strategy hash</dt>
+                <dd>
+                  <Hex value={market.order.strategyHash} />
+                </dd>
+                <dt>Router</dt>
+                <dd>
+                  <Hex value={market.router} />
+                </dd>
+                <dt>Feed</dt>
+                <dd>
+                  <Hex value={market.feed} />
+                </dd>
+                <dt>Maker</dt>
+                <dd>
+                  <Hex value={market.order.maker} />
+                </dd>
+                {last ? (
+                  <>
+                    {last.approveTx ? <TxLine label="Last approve" hash={last.approveTx} /> : null}
+                    <TxLine label="Last swap" hash={last.swapTx} />
+                  </>
+                ) : (
+                  <>
+                    <dt>Last tx</dt>
+                    <dd className="muted">none this session</dd>
+                  </>
+                )}
+              </dl>
             ) : null}
-          </CardContent>
-        </Card>
+          </Panel>
+        </div>
       )}
-    </div>
+    </main>
   );
 }

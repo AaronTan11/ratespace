@@ -1,21 +1,20 @@
-import { Button } from "@ratespace/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@ratespace/ui/components/card";
-import { Skeleton } from "@ratespace/ui/components/skeleton";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { formatUnits, zeroAddress, type Hash } from "viem";
+import { zeroAddress, type Hash } from "viem";
 
+import { Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
 import { IS_LOCAL_DEMO, REFRESH_MS, publicClient } from "@/lib/chain/config";
 import { loaded, marketsOf, toOrderTuple, type Market } from "@/lib/chain/deployments";
 import { NotMakerError, readRate, simulateReport } from "@/lib/chain/feeds";
-import { formatDeltaBps, formatFixed } from "@/lib/chain/math";
+import { formatDeltaBps } from "@/lib/chain/math";
 import { buildTakerData } from "@/lib/chain/orderBuilder";
 import { quote, routerHash } from "@/lib/chain/router";
 import { useWallet } from "@/lib/chain/wallet";
+import { deltaSign } from "@/lib/format";
 
 export const Route = createFileRoute("/rate")({
   component: RateComponent,
@@ -96,91 +95,146 @@ function RateCard({ m }: { m: Market }) {
     }
   }
 
+  const matches = q.data ? q.data.hash.toLowerCase() === m.order.strategyHash.toLowerCase() : undefined;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{m.key}</CardTitle>
-        <CardDescription className="font-mono break-all">feed {m.feed}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {q.isError ? (
-          <QueryError error={q.error} />
-        ) : q.data ? (
-          <div className="space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Feed rate()</span>
-              <span className="font-mono">{formatFixed(q.data.rate, 18, 6)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Quote: 1 {m.key} → WETH</span>
-              <span className="font-mono">{formatUnits(q.data.out, 18)}</span>
-            </div>
-            <div className="text-xs text-muted-foreground">block {q.data.blockNumber.toString()}</div>
-          </div>
-        ) : (
-          <Skeleton className="h-12 w-full" />
-        )}
-        {IS_LOCAL_DEMO ? (
-          <Button onClick={() => void onStep()} disabled={busy || !wallet.address}>
-            {busy ? "Sending…" : "Simulate report +1 bp"}
-          </Button>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Rate comes from Lido's Sepolia oracle; it updates when Lido reports.
-          </p>
-        )}
-        {step ? (
-          <div className="space-y-1 border p-2">
-            <div className="flex justify-between gap-2">
-              <span className="text-muted-foreground">rate</span>
-              <span className="font-mono">
-                {formatFixed(step.before.rate, 18, 6)} → {formatFixed(step.after.rate, 18, 6)} (
-                {formatDeltaBps(step.before.rate, step.after.rate)} bps)
-              </span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span className="text-muted-foreground">quote</span>
-              <span className="font-mono">
-                {formatUnits(step.before.out, 18)} → {formatUnits(step.after.out, 18)} (
-                {step.before.out === 0n ? "n/a" : formatDeltaBps(step.before.out, step.after.out)} bps)
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground break-all">
-              tx {step.tx} · blocks {step.before.blockNumber.toString()} → {step.after.blockNumber.toString()}
-            </div>
-            <div className="text-xs break-all">
-              router.hash(order): {step.before.hash} → {step.after.hash}{" "}
-              {step.before.hash === step.after.hash ? "(unchanged)" : "(CHANGED)"}
-            </div>
-          </div>
-        ) : null}
-        <p className="text-xs text-muted-foreground break-all">
-          Same order, no re-ship: the strategy hash is unchanged — {m.order.strategyHash}
+    <tbody>
+      <tr>
+        <td>
+          <Pair yieldSym={m.key} />
+        </td>
+        <td>
+          <Hex value={m.feed} />
+        </td>
+        <td className="num r">{q.isError ? "—" : q.data ? <Num value={q.data.rate} /> : <Skel w={72} />}</td>
+        <td className="num r">{q.isError ? "—" : q.data ? <Num value={q.data.out} /> : <Skel w={72} />}</td>
+        <td>
           {q.data ? (
-            <span className="block">
-              router.hash(order) now: {q.data.hash}{" "}
-              {q.data.hash.toLowerCase() === m.order.strategyHash.toLowerCase() ? "(matches)" : "(DOES NOT MATCH)"}
+            <span className={`rs-chip sans ${matches ? "good" : "bad"}`} title={`router.hash(order) now: ${q.data.hash}`}>
+              <span className={`rs-dot ${matches ? "good" : "bad"}`} aria-hidden />
+              {matches ? "matches" : "DOES NOT MATCH"}
             </span>
+          ) : q.isError ? null : (
+            <Skel w={64} />
+          )}
+        </td>
+        <td className="r" style={IS_LOCAL_DEMO ? undefined : { whiteSpace: "normal", minWidth: 220 }}>
+          {IS_LOCAL_DEMO ? (
+            <button type="button" className="rs-btn" onClick={() => void onStep()} disabled={busy || !wallet.address}>
+              {busy ? "Sending…" : "Simulate report +1 bp"}
+            </button>
+          ) : (
+            <span className="muted">Rate comes from Lido's Sepolia oracle; it updates when Lido reports.</span>
+          )}
+        </td>
+      </tr>
+      {q.isError ? (
+        <tr>
+          <td colSpan={6} style={{ height: "auto", padding: "8px 12px" }}>
+            <QueryError error={q.error} />
+          </td>
+        </tr>
+      ) : null}
+      {step ? <StepRow step={step} /> : null}
+      <tr className="rs-caption">
+        <td colSpan={6}>
+          <span className="muted">Same order, no re-ship: the strategy hash is unchanged —</span>{" "}
+          <Hex value={m.order.strategyHash} head={10} tail={8} />
+          {q.data ? (
+            <>
+              <span className="muted"> · router.hash(order) now </span>
+              <Hex value={q.data.hash} head={10} tail={8} />{" "}
+              <span className={matches ? "good" : "bad"}>{matches ? "(matches)" : "(DOES NOT MATCH)"}</span>
+              <span className="muted"> · block </span>
+              <span className="rs-num soft">{q.data.blockNumber.toString()}</span>
+            </>
           ) : null}
-        </p>
-      </CardContent>
-    </Card>
+        </td>
+      </tr>
+    </tbody>
+  );
+}
+
+function Delta({ before, after }: { before: bigint; after: bigint }) {
+  if (before === 0n) return <span className="muted">n/a</span>;
+  const d = formatDeltaBps(before, after);
+  const sign = deltaSign(d);
+  return <span className={`rs-num ${sign > 0 ? "good" : sign < 0 ? "bad" : "muted"}`}>{d} bps</span>;
+}
+
+function StepRow({ step }: { step: Step }) {
+  const unchanged = step.before.hash === step.after.hash;
+  return (
+    <tr className="rs-step">
+      <td colSpan={6}>
+        <div className="rs-step-grid">
+          <span className="rs-eyebrow">Rate</span>
+          <span className="rs-num">
+            <Num value={step.before.rate} /> <span className="muted">→</span> <Num value={step.after.rate} />
+          </span>
+          <Delta before={step.before.rate} after={step.after.rate} />
+
+          <span className="rs-eyebrow">Quote</span>
+          <span className="rs-num">
+            <Num value={step.before.out} /> <span className="muted">→</span> <Num value={step.after.out} />
+          </span>
+          <Delta before={step.before.out} after={step.after.out} />
+
+          <span className="rs-eyebrow">Hash</span>
+          <span className="rs-num">
+            <Hex value={step.before.hash} /> <span className="muted">→</span> <Hex value={step.after.hash} />
+          </span>
+          <span className={`rs-chip sans ${unchanged ? "good" : "bad"}`}>{unchanged ? "unchanged" : "CHANGED"}</span>
+
+          <span className="rs-eyebrow">Tx</span>
+          <span className="rs-num">
+            <Hex value={step.tx} head={10} tail={8} />
+          </span>
+          <span className="rs-meta">
+            blocks <span className="rs-num soft">{step.before.blockNumber.toString()}</span> →{" "}
+            <span className="rs-num soft">{step.after.blockNumber.toString()}</span>
+          </span>
+        </div>
+      </td>
+    </tr>
   );
 }
 
 function RateComponent() {
   return (
-    <div className="container mx-auto max-w-4xl space-y-4 px-4 py-6">
-      <h1 className="text-lg font-semibold">Watch the peg move</h1>
+    <main className="rs-page">
+      <PageHead eyebrow="Rate" title="Watch the peg move" />
       {!loaded.deployed ? (
         <NotDeployed />
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
-          {markets.map((m) => (
-            <RateCard key={m.key} m={m} />
-          ))}
-        </div>
+        <Panel
+          title="Feeds"
+          meta={IS_LOCAL_DEMO ? "anvil · DemoRateFeed, maker can step +1 bp" : "Lido oracle · read only"}
+          bodyClass="rs-table-wrap"
+        >
+          <table className="rs-table">
+            <thead>
+              <tr>
+                <th scope="col">Market</th>
+                <th scope="col">Feed</th>
+                <th scope="col" className="r">
+                  Feed rate()
+                </th>
+                <th scope="col" className="r">
+                  Quote 1 unit → WETH
+                </th>
+                <th scope="col">router.hash</th>
+                <th scope="col" className="r">
+                  {IS_LOCAL_DEMO ? "Simulate" : "Source"}
+                </th>
+              </tr>
+            </thead>
+            {markets.map((m) => (
+              <RateCard key={m.key} m={m} />
+            ))}
+          </table>
+        </Panel>
       )}
-    </div>
+    </main>
   );
 }

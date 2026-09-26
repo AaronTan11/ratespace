@@ -41,13 +41,13 @@ export function Hex({ value, head, tail }: { value: string; head?: number; tail?
   );
 }
 
-/** Yield token (teal) against WETH (indigo). */
+/** Yield token against WETH: token hues only inside the two glyph dots. */
 export function Pair({ yieldSym }: { yieldSym: string }) {
   return (
     <span className="rs-pair">
       <span className="marks" aria-hidden>
-        <i style={{ background: "var(--teal)" }} />
-        <i style={{ background: "var(--weth)" }} />
+        <i style={{ background: "var(--glyph-yield)" }} />
+        <i style={{ background: "var(--glyph-weth)" }} />
       </span>
       <span>
         {yieldSym}

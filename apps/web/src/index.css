@@ -1,10 +1,10 @@
 @import "@ratespace/ui/globals.css";
 
 /*
- * RateSpace app surface. Tokens live in packages/ui/src/styles/globals.css.
- * Rules: one accent (gold) for the primary action, one number per screen and focus;
- * teal/indigo only mark the two sides of a pair; good/bad only for meaning.
- * 4/8px grid, hairlines, panels not cards.
+ * RateSpace app surface, v2 (wiki/briefs/design/refero-2.md). Tokens live in packages/ui/src/styles/globals.css.
+ * Rules: one chromatic accent (--accent) for interaction only; --highlight on exactly one number per page;
+ * good/bad only for meaning; token hues only inside the glyph dots. Elevation by tonal steps and a 1px inset
+ * ring (--edge); no shadows, gradients, glass or blur. Radii: cards 8px, controls 6px, pills 999px.
  */
 
 @layer components {
@@ -13,41 +13,45 @@
     width: 100%;
     max-width: 1200px;
     margin: 0 auto;
-    padding: 24px 24px 48px;
+    padding: 32px 24px 48px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 32px;
   }
   .rs-head {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
-    padding-bottom: 4px;
+  }
+  .rs-head > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   .rs-head h1 {
     margin: 0;
     font-size: 18px;
-    line-height: 24px;
+    line-height: 1.25;
     font-weight: 600;
-    letter-spacing: -0.01em;
     color: var(--text);
   }
   .rs-eyebrow {
     font-size: 11px;
-    line-height: 16px;
+    line-height: 1.5;
     font-weight: 500;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--text-2);
   }
   .rs-meta {
     font-size: 12px;
-    color: var(--muted);
+    line-height: 1.5;
+    color: var(--text-3);
   }
   .rs-cols {
     display: grid;
-    grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
     gap: 16px;
     align-items: start;
   }
@@ -57,11 +61,11 @@
     }
   }
 
-  /* ---------- panel ---------- */
+  /* ---------- card ---------- */
   .rs-panel {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 6px;
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--edge);
+    border-radius: 8px;
     min-width: 0;
   }
   .rs-panel-head {
@@ -69,51 +73,55 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    min-height: 36px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--line);
+    min-height: 48px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--hairline);
   }
   .rs-panel-body {
-    padding: 12px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
   }
   .rs-divider {
     height: 1px;
-    background: var(--line);
+    background: var(--hairline);
     border: 0;
     margin: 0;
   }
 
-  /* ---------- summary strip ---------- */
+  /* ---------- markets: one stats card (hero sentence + three columns) ---------- */
+  .rs-stats {
+    display: flex;
+    flex-direction: column;
+  }
   .rs-strip {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 6px;
   }
   .rs-strip > div {
-    padding: 12px 16px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 4px;
     min-width: 0;
   }
   .rs-strip > div + div {
-    border-left: 1px solid var(--line);
+    border-left: 1px solid var(--hairline);
   }
   .rs-strip .v {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 16px;
-    line-height: 24px;
+    font-size: 24px;
+    line-height: 1.2;
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .rs-strip .v .rs-unit {
+    font-size: 13px;
   }
   @media (max-width: 720px) {
     .rs-strip {
@@ -121,33 +129,39 @@
     }
     .rs-strip > div + div {
       border-left: 0;
-      border-top: 1px solid var(--line);
+      border-top: 1px solid var(--hairline);
     }
   }
 
-  /* the single gold statement */
+  /* the one hero sentence: only the .n.hero figure is --highlight */
   .rs-statement {
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px 16px;
-    background: var(--panel2);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    color: var(--soft);
+    column-gap: 10px;
+    row-gap: 4px;
+    margin: 0;
+    padding: 20px 16px;
+    border-bottom: 1px solid var(--hairline);
+    color: var(--text-2);
     font-size: 14px;
   }
-  .rs-statement .n {
+  .rs-statement > .rs-num {
+    color: var(--text);
+    font-size: 14px;
+  }
+  .rs-statement .n.hero {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    color: var(--text);
-    font-size: 16px;
-  }
-  .rs-statement .n.gold {
-    color: var(--gold);
-    font-size: 20px;
+    color: var(--highlight);
+    font-size: 32px;
+    line-height: 1.1;
     font-weight: 500;
+  }
+  .rs-statement .n.hero .rs-unit {
+    color: var(--highlight);
+    font-size: 14px;
+    font-weight: 400;
   }
 
   /* ---------- tables ---------- */
@@ -160,22 +174,21 @@
     font-size: 13px;
   }
   .rs-table th {
-    height: 32px;
-    padding: 0 12px;
+    height: 36px;
+    padding: 0 16px;
     text-align: left;
     font-size: 11px;
     font-weight: 500;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--muted);
-    background: var(--panel2);
-    border-bottom: 1px solid var(--line);
+    color: var(--text-2);
+    border-bottom: 1px solid var(--hairline);
     white-space: nowrap;
   }
   .rs-table td {
-    height: 44px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--line);
+    height: 48px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--hairline);
     color: var(--text);
     white-space: nowrap;
   }
@@ -183,7 +196,7 @@
     border-bottom: 0;
   }
   .rs-table tbody tr:hover td {
-    background: var(--panel2);
+    background: var(--surface-3);
   }
   .rs-table .r {
     text-align: right;
@@ -193,7 +206,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* ---------- key/value rows ---------- */
+  /* ---------- detail list (key/value rows) ---------- */
   dl.rs-kv {
     margin: 0;
     display: grid;
@@ -203,22 +216,22 @@
   .rs-kv dt,
   .rs-kv dd {
     margin: 0;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--line);
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--hairline);
     min-width: 0;
   }
   .rs-kv dt {
-    color: var(--muted);
+    color: var(--text-2);
   }
   .rs-kv dd {
+    justify-content: flex-end;
+    gap: 6px;
     text-align: right;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     color: var(--text);
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 6px;
   }
   .rs-kv > :nth-last-child(-n + 2) {
     border-bottom: 0;
@@ -230,7 +243,7 @@
     font-variant-numeric: tabular-nums;
   }
   .rs-unit {
-    color: var(--muted);
+    color: var(--text-2);
     font-family: var(--font-sans);
     margin-left: 4px;
   }
@@ -239,7 +252,7 @@
     align-items: center;
     gap: 4px;
     font-family: var(--font-mono);
-    color: var(--soft);
+    color: var(--text);
   }
   .rs-copy {
     display: inline-flex;
@@ -249,27 +262,24 @@
     height: 20px;
     padding: 0;
     border: 0;
-    border-radius: 3px;
+    border-radius: 6px;
     background: transparent;
-    color: var(--faint);
+    color: var(--text-3);
     cursor: pointer;
   }
   .rs-copy:hover {
     color: var(--text);
-    background: var(--raise);
   }
   .rs-copy[data-copied="true"] {
     color: var(--good);
   }
   .rs-link {
-    color: var(--soft);
-    text-decoration: underline;
-    text-decoration-color: var(--line2);
-    text-underline-offset: 3px;
+    color: var(--accent);
+    text-decoration: none;
   }
   .rs-link:hover {
-    color: var(--text);
-    text-decoration-color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
   .good {
     color: var(--good);
@@ -278,10 +288,13 @@
     color: var(--bad);
   }
   .muted {
-    color: var(--muted);
+    color: var(--text-2);
   }
   .soft {
-    color: var(--soft);
+    color: var(--text-2);
+  }
+  .hl {
+    color: var(--highlight);
   }
 
   /* ---------- chips and dots ---------- */
@@ -289,35 +302,43 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 22px;
-    padding: 0 8px;
-    border: 1px solid var(--line2);
-    border-radius: 3px;
-    background: var(--panel2);
-    color: var(--soft);
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-2);
     font-family: var(--font-mono);
     font-size: 12px;
     white-space: nowrap;
   }
   .rs-chip.good {
     color: var(--good);
-    border-color: color-mix(in srgb, var(--good) 30%, var(--line2));
-    background: color-mix(in srgb, var(--good) 7%, var(--panel2));
+    border-color: color-mix(in srgb, var(--good) 50%, transparent);
   }
   .rs-chip.bad {
     color: var(--bad);
-    border-color: var(--bad-line);
-    background: color-mix(in srgb, var(--bad) 7%, var(--panel2));
+    border-color: color-mix(in srgb, var(--bad) 50%, transparent);
   }
+  .rs-chip.hl {
+    color: var(--highlight);
+    border-color: color-mix(in srgb, var(--highlight) 50%, transparent);
+  }
+  /* semantic status chip: 11px caption */
   .rs-chip.sans {
+    height: 22px;
     font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   .rs-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     flex: none;
-    background: var(--faint);
+    background: var(--text-3);
     display: inline-block;
   }
   .rs-dot.good {
@@ -326,14 +347,20 @@
   .rs-dot.bad {
     background: var(--bad);
   }
+  /* token identity glyphs: hue allowed only here */
+  .rs-dot.teal,
+  .rs-dot.weth {
+    width: 8px;
+    height: 8px;
+  }
   .rs-dot.teal {
-    background: var(--teal);
+    background: var(--glyph-yield);
   }
   .rs-dot.weth {
-    background: var(--weth);
+    background: var(--glyph-weth);
   }
 
-  /* pair mark: yield side teal, WETH side indigo */
+  /* pair glyph + name */
   .rs-pair {
     display: inline-flex;
     align-items: center;
@@ -348,29 +375,30 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: 2px solid var(--panel);
+    border: 2px solid var(--surface-2);
     box-sizing: content-box;
   }
   .rs-pair .marks i + i {
     margin-left: -4px;
   }
   .rs-pair .sep {
-    color: var(--faint);
+    color: var(--text-3);
     font-weight: 400;
   }
 
   /* ---------- buttons ---------- */
+  /* ghost button */
   .rs-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    height: 32px;
+    height: 34px;
     padding: 0 12px;
-    border: 1px solid var(--line2);
-    border-radius: 4px;
-    background: var(--raise);
-    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-2);
     font: inherit;
     font-size: 13px;
     font-weight: 500;
@@ -378,122 +406,96 @@
     white-space: nowrap;
   }
   .rs-btn:hover:not(:disabled) {
-    border-color: var(--faint);
+    background: var(--surface-3);
+    color: var(--text);
   }
   .rs-btn:disabled {
-    color: var(--faint);
+    color: var(--text-3);
     cursor: not-allowed;
   }
   .rs-btn.sm {
-    height: 24px;
+    height: 26px;
     padding: 0 8px;
     font-size: 12px;
   }
   .rs-btn.bad {
-    background: transparent;
-    border-color: var(--bad-line);
+    border-color: color-mix(in srgb, var(--bad) 50%, transparent);
     color: var(--bad);
   }
+  /* primary CTA: neutral light pill, black text */
   .rs-btn-primary {
     width: 100%;
     height: 44px;
-    border: 1px solid var(--gold);
-    border-radius: 4px;
-    background: var(--gold);
-    color: var(--gold-ink);
+    border: 0;
+    border-radius: 999px;
+    background: var(--cta);
+    color: var(--cta-ink);
     font: inherit;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
   }
   .rs-btn-primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--gold) 88%, white);
+    background: var(--text);
   }
   .rs-btn-primary:disabled {
-    background: var(--raise);
-    border-color: var(--line2);
-    color: var(--faint);
+    background: var(--surface-3);
+    color: var(--text-3);
     cursor: not-allowed;
   }
 
-  /* segmented control */
+  /* segmented control (market tabs, Exit/Enter) */
   .rs-seg {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
     gap: 2px;
     padding: 2px;
-    background: var(--panel2);
-    border: 1px solid var(--line2);
-    border-radius: 4px;
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+    border-radius: 6px;
   }
   .rs-seg button {
-    height: 28px;
-    padding: 0 8px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 10px;
     border: 0;
-    border-radius: 3px;
+    border-radius: 4px;
     background: transparent;
-    color: var(--muted);
+    color: var(--text-2);
     font: inherit;
     font-size: 13px;
     cursor: pointer;
     white-space: nowrap;
+    overflow: hidden;
   }
   .rs-seg button:hover {
     color: var(--text);
   }
   .rs-seg button[aria-pressed="true"] {
-    background: var(--raise);
+    background: var(--surface-3);
     color: var(--text);
     font-weight: 500;
   }
-
-  /* text tabs with an underline indicator */
-  .rs-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .rs-tabs button,
-  .rs-tabs a {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 36px;
-    padding: 0 12px;
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .rs-tabs button:hover,
-  .rs-tabs a:hover {
-    color: var(--text);
-  }
-  .rs-tabs [aria-pressed="true"],
-  .rs-tabs a.active {
-    color: var(--text);
-  }
-  .rs-tabs [aria-pressed="true"]::after,
-  .rs-tabs a.active::after {
+  .rs-seg button[aria-pressed="true"]::after {
     content: "";
     position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: -1px;
+    left: 10px;
+    right: 10px;
+    bottom: 0;
     height: 2px;
-    background: var(--text);
+    background: var(--accent);
   }
 
   /* ---------- amount field ---------- */
   .rs-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
   .rs-field-top {
     display: flex;
@@ -504,15 +506,15 @@
   .rs-input {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 48px;
-    padding: 0 8px 0 12px;
-    background: var(--panel2);
-    border: 1px solid var(--line2);
-    border-radius: 4px;
+    gap: 10px;
+    height: 56px;
+    padding: 0 10px 0 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
   }
   .rs-input:focus-within {
-    border-color: var(--gold);
+    border-color: var(--accent);
   }
   .rs-input input {
     flex: 1;
@@ -524,8 +526,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 20px;
-    letter-spacing: -0.01em;
+    font-size: 28px;
   }
   .rs-input input:focus-visible {
     outline: none;
@@ -534,53 +535,54 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--soft);
+    color: var(--text-2);
     font-weight: 500;
   }
   .rs-input[data-invalid="true"] {
-    border-color: var(--bad-line);
+    border-color: var(--bad);
   }
 
-  /* quote block */
+  /* quote block: no box of its own inside the ticket card */
   .rs-quote {
-    background: var(--panel2);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 4px 12px;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
   }
   .rs-quote .receive {
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--hairline);
   }
   .rs-quote .receive .v {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 20px;
+    font-size: 32px;
+    line-height: 1.1;
     color: var(--text);
+  }
+  .rs-quote .receive .v .rs-unit {
+    font-size: 14px;
   }
   .rs-inline-note {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 12px;
-    color: var(--soft);
+    color: var(--text-2);
   }
 
   /* ---------- states ---------- */
   .rs-notice {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-left: 2px solid var(--line2);
-    border-radius: 4px;
-    padding: 12px 16px;
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--edge);
+    border-left: 2px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    color: var(--soft);
+    color: var(--text-2);
     font-size: 13px;
   }
   .rs-notice.bad {
@@ -592,8 +594,8 @@
   }
   .rs-notice code {
     padding: 1px 4px;
-    border-radius: 3px;
-    background: var(--raise);
+    border-radius: 4px;
+    background: var(--surface-3);
     color: var(--text);
     font-size: 12px;
   }
@@ -607,8 +609,8 @@
     display: inline-block;
     height: 12px;
     width: 96px;
-    border-radius: 2px;
-    background: var(--raise);
+    border-radius: 4px;
+    background: var(--surface-3);
     vertical-align: middle;
     animation: rs-pulse 1.4s ease-in-out infinite;
   }
@@ -629,10 +631,10 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    min-height: 28px;
+    min-height: 32px;
     padding: 2px 16px;
-    background: color-mix(in srgb, var(--bad) 9%, var(--bg));
-    border-bottom: 1px solid var(--bad-line);
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--hairline);
     color: var(--bad);
     font-size: 12px;
   }
@@ -640,18 +642,17 @@
     display: flex;
     align-items: center;
     gap: 24px;
-    height: 48px;
+    height: 56px;
     padding: 0 24px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--line);
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--hairline);
   }
   .rs-wordmark {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
-    letter-spacing: 0.06em;
     color: var(--text);
     text-decoration: none;
   }
@@ -664,8 +665,8 @@
     display: inline-flex;
     align-items: center;
     padding: 0 12px;
-    color: var(--muted);
-    font-size: 13px;
+    color: var(--text-2);
+    font-size: 14px;
     text-decoration: none;
   }
   .rs-nav a:hover {
@@ -673,6 +674,7 @@
   }
   .rs-nav a.active {
     color: var(--text);
+    font-weight: 500;
   }
   .rs-nav a.active::after {
     content: "";
@@ -681,13 +683,17 @@
     right: 12px;
     bottom: -1px;
     height: 2px;
-    background: var(--text);
+    background: var(--accent);
   }
   .rs-header .right {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+  .rs-header .rs-chip {
+    height: 30px;
+    padding: 0 12px;
   }
   button.rs-chip {
     cursor: pointer;
@@ -696,21 +702,21 @@
     font-size: 12px;
   }
   button.rs-chip:hover:not(:disabled) {
-    border-color: var(--faint);
+    background: var(--surface-3);
     color: var(--text);
   }
   button.rs-chip:disabled {
     cursor: not-allowed;
-    color: var(--faint);
+    color: var(--text-3);
   }
 
   /* ---------- rate rows ---------- */
   .rs-table tr.rs-caption td {
     height: auto;
-    padding: 6px 12px 12px;
+    padding: 4px 16px 14px;
     font-size: 12px;
     white-space: normal;
-    border-bottom: 1px solid var(--line2);
+    border-bottom: 1px solid var(--hairline);
   }
   .rs-table tbody:last-of-type tr.rs-caption td {
     border-bottom: 0;
@@ -721,7 +727,7 @@
   }
   .rs-table tr.rs-step td {
     height: auto;
-    padding: 8px 12px;
+    padding: 4px 16px 8px;
     border-bottom: 0;
   }
   .rs-step-grid {
@@ -729,38 +735,31 @@
     grid-template-columns: 56px max-content max-content;
     align-items: center;
     column-gap: 16px;
-    row-gap: 6px;
-    padding: 8px 12px;
-    background: var(--panel2);
-    border: 1px solid var(--line);
-    border-radius: 4px;
+    row-gap: 8px;
+    padding: 12px 0;
+    border-top: 1px solid var(--hairline);
     font-size: 12px;
   }
 }
 
 /* sonner toasts on the palette (outside the layer so they beat sonner's own styles) */
 [data-sonner-toaster] [data-sonner-toast] {
-  background: var(--raise);
-  border: 1px solid var(--line2);
-  border-radius: 4px;
+  background: var(--surface-3);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--edge);
+  border-radius: 8px;
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 13px;
 }
 [data-sonner-toaster] [data-sonner-toast] [data-description] {
-  color: var(--soft);
+  color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 11px;
   word-break: break-all;
 }
-[data-sonner-toaster] [data-sonner-toast][data-type="success"] {
-  border-left: 2px solid var(--good);
-}
 [data-sonner-toaster] [data-sonner-toast][data-type="success"] [data-icon] {
   color: var(--good);
-}
-[data-sonner-toaster] [data-sonner-toast][data-type="error"] {
-  border-left: 2px solid var(--bad);
 }
 [data-sonner-toaster] [data-sonner-toast][data-type="error"] [data-icon] {
   color: var(--bad);

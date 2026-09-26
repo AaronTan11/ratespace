@@ -7,85 +7,89 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * RateSpace palette (dark only). Values are verbatim from
- * wiki/briefs/design/mockup-prototype.html; the shadcn slots below map onto them.
+ * RateSpace palette v2 (dark only). Values are verbatim from wiki/briefs/design/refero-2.md.
+ * Elevation by tonal steps (bg < surface-1 < surface-2 < surface-3) and 1px inset rings, never shadows.
+ * One chromatic accent (--accent) for interaction; --highlight on exactly one number per page.
+ * The spec's card-ring token is named --edge here, because shadcn owns --ring (the focus ring).
  */
 :root {
   /* surfaces, darkest to raised */
-  --bg: #0c0f14;
-  --panel2: #0f141b;
-  --panel: #131820;
-  --raise: #1a212b;
-  /* hairlines */
-  --line: #1e2530;
-  --line2: #252e3a;
+  --bg: #080809;
+  --surface-1: #141415;
+  --surface-2: #1b1d1f;
+  --surface-3: #232529;
+  /* lines */
+  --edge: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.06);
+  --border-strong: #34353c;
   /* text scale */
-  --text: #eef1f5;
-  --soft: #c9d1dc;
-  --muted: #9aa5b4;
-  --faint: #7e8a99;
-  /* the one accent, and the ink that sits on it */
-  --gold: #f2b544;
-  --gold-ink: #1a1204;
-  /* the two sides of a pair: yield token and WETH (marks only, not text on --raise) */
-  --teal: #4fc7b8;
-  --weth: #6b7af0;
+  --text: #ffffff;
+  --text-2: #acadae;
+  --text-3: #8a8c91;
+  /* the one interaction colour, and the ink for (rare) accent fills */
+  --accent: #83c3ff;
+  --accent-ink: #0b1a2a;
+  /* one hero number per page */
+  --highlight: #ffa16c;
+  /* primary button: neutral light pill, black text */
+  --cta: #e6e6e6;
+  --cta-ink: #000000;
   /* meaning only */
-  --good: #7fdba0;
-  --bad: #f2a0a0;
-  --bad-line: #6b3a3a;
+  --good: #4ebe96;
+  --bad: #e24756;
+  --warn: #ffa16c;
+  /* token identity: only inside the 8-10px glyph dots */
+  --glyph-yield: #4fc7b8;
+  --glyph-weth: #6b7af0;
 }
 
-/* shadcn slots, mapped onto the palette. shadcn's --muted surface slot is served by --raise
-   (see --color-muted below) because --muted is the prototype's text colour. */
+/* shadcn slots, mapped onto the palette. --accent is our interaction colour; shadcn's accent
+   *surface* slot (hover background) is served by --surface-3 via --color-accent below. */
 :root {
   --background: var(--bg);
   --foreground: var(--text);
-  --card: var(--panel);
+  --card: var(--surface-2);
   --card-foreground: var(--text);
-  --popover: var(--raise);
+  --popover: var(--surface-3);
   --popover-foreground: var(--text);
-  --primary: var(--gold);
-  --primary-foreground: var(--gold-ink);
-  --secondary: var(--raise);
+  --primary: var(--cta);
+  --primary-foreground: var(--cta-ink);
+  --secondary: var(--surface-3);
   --secondary-foreground: var(--text);
-  --muted-foreground: var(--muted);
-  --accent: var(--raise);
+  --muted: var(--surface-3);
+  --muted-foreground: var(--text-2);
   --accent-foreground: var(--text);
   --destructive: var(--bad);
-  --border: var(--line);
-  --input: var(--line2);
-  --ring: var(--gold);
-  --radius: 0.25rem;
+  --border: var(--border-strong);
+  --input: var(--border-strong);
+  --ring: var(--accent);
+  --radius: 0.5rem;
 }
 
 @theme inline {
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --color-bg: var(--bg);
-  --color-panel: var(--panel);
-  --color-panel2: var(--panel2);
-  --color-raise: var(--raise);
-  --color-line: var(--line);
-  --color-line2: var(--line2);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hairline: var(--hairline);
+  --color-border-strong: var(--border-strong);
   --color-text: var(--text);
-  --color-soft: var(--soft);
-  --color-faint: var(--faint);
-  --color-gold: var(--gold);
-  --color-gold-ink: var(--gold-ink);
-  --color-teal: var(--teal);
-  --color-weth: var(--weth);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-highlight: var(--highlight);
+  --color-cta: var(--cta);
   --color-good: var(--good);
   --color-bad: var(--bad);
-  --color-bad-line: var(--bad-line);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
+  --color-accent: var(--surface-3);
   --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--raise);
+  --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -115,8 +119,8 @@
   }
   body {
     @apply font-sans bg-background text-foreground;
-    font-size: 13px;
-    line-height: 1.45;
+    font-size: 14px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
   /* numbers, addresses, hashes: Geist Mono with tabular figures */
@@ -129,11 +133,11 @@
     font-feature-settings: "tnum" 1, "zero" 1;
   }
   :focus-visible {
-    outline: 2px solid var(--gold);
+    outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
     outline-offset: 2px;
   }
   ::selection {
-    background: color-mix(in srgb, var(--gold) 28%, transparent);
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
     color: var(--text);
   }
 }

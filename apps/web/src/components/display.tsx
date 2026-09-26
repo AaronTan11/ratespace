@@ -1,7 +1,16 @@
 import { Check, Copy } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
+import { loaded } from "@/lib/chain/deployments";
 import { fmt6, fullTitle, shortHex } from "@/lib/format";
+
+/** Plain name of the router an order lives on. */
+export function routeName(router: string): string {
+  const a = loaded.deployments.addresses;
+  if (router.toLowerCase() === a.router.toLowerCase()) return "1inch AquaSwapVMRouter";
+  if (router.toLowerCase() === a.ourRouter?.toLowerCase()) return "RateSpace router";
+  return "router";
+}
 
 /** 6 dp mono number; full precision and raw wei on hover. */
 export function Num({ value, decimals = 18, unit }: { value: bigint; decimals?: number; unit?: string }) {
@@ -83,14 +92,55 @@ export function Panel({
   );
 }
 
-export function PageHead({ eyebrow, title, right }: { eyebrow: string; title: ReactNode; right?: ReactNode }) {
+export function PageHead({
+  eyebrow,
+  title,
+  sub,
+  right,
+}: {
+  eyebrow: string;
+  title: ReactNode;
+  sub?: ReactNode;
+  right?: ReactNode;
+}) {
   return (
     <div className="rs-head">
       <div>
         <div className="rs-eyebrow">{eyebrow}</div>
         <h1>{title}</h1>
+        {sub ? (
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: "var(--text-2)", maxWidth: 640 }}>{sub}</p>
+        ) : null}
       </div>
       {right}
     </div>
+  );
+}
+
+/** Collapsed-by-default disclosure for the technical proof (hashes, addresses, raw values). */
+export function Details({
+  summary = "Details",
+  children,
+  style,
+}: {
+  summary?: ReactNode;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  return (
+    <details style={style}>
+      <summary
+        style={{
+          cursor: "pointer",
+          padding: "10px 0",
+          fontSize: 13,
+          color: "var(--text-2)",
+          userSelect: "none",
+        }}
+      >
+        {summary}
+      </summary>
+      {children}
+    </details>
   );
 }

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Hex, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
-import type { ReactNode } from "react";
+import { Details, Hex, routeName, Num, PageHead, Pair, Panel, Skel } from "@/components/display";
+import { Fragment, type ReactNode } from "react";
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
 import { rawBalances } from "@/lib/chain/aqua";
@@ -9,7 +9,6 @@ import { REFRESH_MS, publicClient } from "@/lib/chain/config";
 import { loaded, marketsOf } from "@/lib/chain/deployments";
 import { readRate } from "@/lib/chain/feeds";
 import { balanceOf } from "@/lib/chain/tokens";
-import { shortHex } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
   component: HomeComponent,
@@ -61,9 +60,18 @@ function HomeComponent() {
   });
   const maker = markets[0]?.order.maker;
 
+  const routeLabel = (router: string) => {
+    const n = routeName(router);
+    return n.startsWith("1inch") ? "via 1inch" : `via ${n}`;
+  };
+
   return (
     <main className="rs-page">
-      <PageHead eyebrow="Markets" title="One ETH balance, many staked-ETH markets" />
+      <PageHead
+        eyebrow="Markets"
+        title="Swap staked ETH to ETH at today's rate."
+        sub="One ETH balance backs every market below — no separate pools, no stale prices."
+      />
       {!loaded.deployed ? (
         <NotDeployed />
       ) : (
@@ -79,49 +87,33 @@ function HomeComponent() {
                 <span className="n hero">
                   <Num value={q.data.totalVirtualWeth} unit="WETH" />
                 </span>
-                of quotes
+                of quotes across <span className="rs-num">{markets.length}</span> markets
               </p>
-            ) : null}
-            <div className="rs-strip" aria-label="Summary">
-              <div>
-                <span className="rs-eyebrow">Maker wallet WETH</span>
-                <span className="v">{q.data ? <Num value={q.data.walletWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}</span>
-                <span className="rs-meta">{maker ? <Hex value={maker} /> : "no maker"}</span>
+            ) : (
+              <div className="rs-statement">
+                <Skel w={320} />
               </div>
-              <div>
-                <span className="rs-eyebrow">Total virtual backing</span>
-                <span className="v">
-                  {q.data ? <Num value={q.data.totalVirtualWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}
-                </span>
-                <span className="rs-meta">
-                  Aqua rawBalances across <span className="rs-num">{markets.length}</span> orders
-                </span>
-              </div>
-              <div>
-                <span className="rs-eyebrow">Block</span>
-                <span className="v">{q.data ? q.data.blockNumber.toString() : <Wait w={64} failed={q.isError} />}</span>
-                <span className="rs-meta">every read pinned to this block</span>
-              </div>
+            )}
+            <div style={{ padding: "10px 16px" }} className="rs-meta">
+              Block{" "}
+              <span className="rs-num">{q.data ? q.data.blockNumber.toString() : q.isError ? "—" : "…"}</span> · updates
+              every {REFRESH_MS / 1000}s
             </div>
           </section>
 
-          <Panel
-            title="Shared-backing orders"
-            meta={`${markets.length} markets · one maker wallet · refresh ${REFRESH_MS / 1000}s`}
-            bodyClass="rs-table-wrap"
-          >
+          <Panel title="Markets" meta={`${markets.length} markets · one shared balance`} bodyClass="rs-table-wrap">
             <table className="rs-table">
               <thead>
                 <tr>
-                  <th scope="col">Market</th>
+                  <th scope="col">Token</th>
                   <th scope="col" className="r">
-                    Live rate
+                    1 token = … ETH
                   </th>
                   <th scope="col" className="r">
-                    Virtual WETH backing
+                    Available
                   </th>
-                  <th scope="col">Strategy hash</th>
-                  <th scope="col">Router</th>
+                  <th scope="col">Route</th>
+                  <th scope="col">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -133,19 +125,23 @@ function HomeComponent() {
                         <Pair yieldSym={m.key} />
                       </td>
                       <td className="num r">{row ? <Num value={row.rate} /> : <Wait w={72} failed={q.isError} />}</td>
-                      <td className="num r">{row ? <Num value={row.virtualWeth} /> : <Wait w={72} failed={q.isError} />}</td>
-                      <td>
-                        <Hex value={m.order.strategyHash} />
+                      <td className="num r">
+                        {row ? <Num value={row.virtualWeth} unit="WETH" /> : <Wait w={72} failed={q.isError} />}
                       </td>
                       <td>
-                        <span className="rs-chip" title={m.router}>
-                          {m.router.toLowerCase() === d.addresses.ourRouter?.toLowerCase()
-                            ? "RateSpaceAquaRouter"
-                            : m.router.toLowerCase() === d.addresses.router.toLowerCase()
-                              ? "AquaSwapVMRouter"
-                              : "router"}
-                          <span className="muted">{shortHex(m.router)}</span>
+                        <span className="rs-chip sans" title={`Router ${m.router}`}>
+                          {routeLabel(m.router)}
                         </span>
+                      </td>
+                      <td>
+                        {row ? (
+                          <span className="rs-chip sans good">
+                            <span className="rs-dot good" aria-hidden />
+                            Live
+                          </span>
+                        ) : (
+                          <Wait w={48} failed={q.isError} />
+                        )}
                       </td>
                     </tr>
                   );
@@ -153,6 +149,30 @@ function HomeComponent() {
               </tbody>
             </table>
           </Panel>
+
+          <Details summary="Technical details">
+            <dl className="rs-kv" style={{ maxWidth: 720 }}>
+              <dt>Liquidity provider</dt>
+              <dd>{maker ? <Hex value={maker} /> : "none"}</dd>
+              {markets.map((m) => (
+                <Fragment key={m.key}>
+                  <dt>{m.key} order id</dt>
+                  <dd>
+                    <Hex value={m.order.strategyHash} />
+                  </dd>
+                  <dt>{m.key} route</dt>
+                  <dd>
+                    <span className="muted">{routeLabel(m.router)}</span>
+                    <Hex value={m.router} />
+                  </dd>
+                </Fragment>
+              ))}
+              <dt>How "Available" is read</dt>
+              <dd className="muted" style={{ fontFamily: "var(--font-sans)" }}>
+                Aqua rawBalances per order, all at one block
+              </dd>
+            </dl>
+          </Details>
         </>
       )}
     </main>

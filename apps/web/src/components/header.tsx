@@ -18,7 +18,7 @@ export default function Header() {
   const links = [
     { to: "/", label: "Markets" },
     { to: "/trade", label: "Trade" },
-    { to: "/rate", label: "Rate" },
+    { to: "/rate", label: "Live rate" },
   ] as const;
   const wallet = useWallet();
   const rpcChain = useQuery({
@@ -29,12 +29,14 @@ export default function Header() {
   });
 
   const rpcLabel = rpcChain.isError
-    ? "RPC offline"
+    ? "Network offline"
     : rpcChain.data === undefined
-      ? "RPC …"
+      ? "Network …"
       : rpcChain.data === CHAIN_ID
-        ? `${rpcChain.data} · ${chain.name}`
-        : `RPC chain ${rpcChain.data} ≠ ${CHAIN_ID}`;
+        ? CHAIN_ID === 31337
+          ? "Local test network"
+          : chain.name
+        : "Wrong network";
   const rpcTone = rpcChain.isError ? "bad" : rpcChain.data === undefined ? "" : rpcChain.data === CHAIN_ID ? "good" : "bad";
   const walletOnWrongChain =
     wallet.available && wallet.walletChainId !== undefined && wallet.walletChainId !== CHAIN_ID;
@@ -75,7 +77,7 @@ export default function Header() {
           ))}
         </nav>
         <div className="right">
-          <span className="rs-chip" title={`RPC chain id vs app chain ${CHAIN_ID}`}>
+          <span className="rs-chip" title={`Chain ${rpcChain.data ?? "?"} (${chain.name}); this app expects chain ${CHAIN_ID}`}>
             <span className={`rs-dot${rpcTone ? ` ${rpcTone}` : ""}`} aria-hidden />
             {rpcLabel}
           </span>
@@ -93,9 +95,13 @@ export default function Header() {
               className="rs-chip"
               onClick={() => void wallet.connect()}
               disabled={wallet.connecting}
+              // Until a browser wallet is detected (SSR, before hydration, or none installed) the accessible
+              // name says so, so nothing clicks "Connect wallet" before it can work.
+              aria-label={wallet.available ? undefined : "Connect wallet (no browser wallet detected)"}
+              title={wallet.available ? undefined : "No browser wallet detected"}
             >
               <span className="rs-dot" aria-label="not connected" />
-              {wallet.connecting ? "Connecting…" : wallet.available ? "Connect wallet" : "No wallet"}
+              {wallet.connecting ? "Connecting…" : "Connect wallet"}
             </button>
           )}
         </div>

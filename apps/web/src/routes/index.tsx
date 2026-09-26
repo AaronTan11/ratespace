@@ -68,41 +68,42 @@ function HomeComponent() {
         <NotDeployed />
       ) : (
         <>
-          <div className="rs-strip" aria-label="Summary">
-            <div>
-              <span className="rs-eyebrow">Maker wallet WETH</span>
-              <span className="v">{q.data ? <Num value={q.data.walletWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}</span>
-              <span className="rs-meta">{maker ? <Hex value={maker} /> : "no maker"}</span>
+          <section className="rs-panel rs-stats" aria-label="Shared backing">
+            {q.isError ? (
+              <div className="rs-statement">
+                <QueryError error={q.error} />
+              </div>
+            ) : q.data ? (
+              <p className="rs-statement">
+                <Num value={q.data.walletWeth} unit="WETH" /> in the wallet backs
+                <span className="n hero">
+                  <Num value={q.data.totalVirtualWeth} unit="WETH" />
+                </span>
+                of quotes
+              </p>
+            ) : null}
+            <div className="rs-strip" aria-label="Summary">
+              <div>
+                <span className="rs-eyebrow">Maker wallet WETH</span>
+                <span className="v">{q.data ? <Num value={q.data.walletWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}</span>
+                <span className="rs-meta">{maker ? <Hex value={maker} /> : "no maker"}</span>
+              </div>
+              <div>
+                <span className="rs-eyebrow">Total virtual backing</span>
+                <span className="v">
+                  {q.data ? <Num value={q.data.totalVirtualWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}
+                </span>
+                <span className="rs-meta">
+                  Aqua rawBalances across <span className="rs-num">{markets.length}</span> orders
+                </span>
+              </div>
+              <div>
+                <span className="rs-eyebrow">Block</span>
+                <span className="v">{q.data ? q.data.blockNumber.toString() : <Wait w={64} failed={q.isError} />}</span>
+                <span className="rs-meta">every read pinned to this block</span>
+              </div>
             </div>
-            <div>
-              <span className="rs-eyebrow">Total virtual backing</span>
-              <span className="v">
-                {q.data ? <Num value={q.data.totalVirtualWeth} unit="WETH" /> : <Wait w={120} failed={q.isError} />}
-              </span>
-              <span className="rs-meta">
-                Aqua rawBalances across <span className="rs-num">{markets.length}</span> orders
-              </span>
-            </div>
-            <div>
-              <span className="rs-eyebrow">Block</span>
-              <span className="v">{q.data ? q.data.blockNumber.toString() : <Wait w={64} failed={q.isError} />}</span>
-              <span className="rs-meta">every read pinned to this block</span>
-            </div>
-          </div>
-
-          {q.isError ? (
-            <div className="rs-notice bad">
-              <QueryError error={q.error} />
-            </div>
-          ) : q.data ? (
-            <p className="rs-statement" style={{ margin: 0 }}>
-              <Num value={q.data.walletWeth} unit="WETH" /> in the wallet backs
-              <span className="n gold">
-                <Num value={q.data.totalVirtualWeth} unit="WETH" />
-              </span>
-              of quotes
-            </p>
-          ) : null}
+          </section>
 
           <Panel
             title="Shared-backing orders"

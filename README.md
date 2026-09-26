@@ -17,11 +17,6 @@ Built at ETHGlobal Tokyo 2026 for the 1inch "Build an Aqua App" track.
 - **Runs on 1inch's official router.** Our pricing is packaged as an `Extruction` target, so the live `AquaSwapVMRouter` v1.0.2 serves it without any custom router. We also ship our own router (`RateSpaceAquaRouter`, opcode `0x59`) with the same maths as a native instruction; both give the same amounts to the wei.
 - **The same order keeps trading as the rate moves.** Anchors are fixed once in ETH value; the live rate is read on every trade; a guard band around the reference rate stops trading if the rate moves too far (cap 10%).
 
-## How it differs from other Aqua apps
-
-- **aqua0** prices FX pairs from a Chainlink-style feed that an oracle has to push, with a new opcode on its own router. RateSpace reads each token's own exchange rate and runs on the official router through the existing `Extruction` opcode.
-- **RWA Outlets** does instant exits for tokenized real-world assets. RateSpace is built for staked ETH, where the rate is on-chain and moves in small daily steps we have measured.
-
 ## What is proven
 
 Everything below was re-run from this repository. Local rows need no network; fork rows need a mainnet RPC.

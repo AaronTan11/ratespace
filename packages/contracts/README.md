@@ -78,3 +78,11 @@ script/demo-stop.sh         # stop anvil
 Deployed (`script/DeployDemo.s.sol`): 1inch Aqua 0.1.0 and AquaSwapVMRouter v1.0.2 built from `lib/swap-vm-v1`, `MovingPegExtruction`, `RateSpaceOrderBuilder` (the app eth_calls it for all order/taker bytes), `DemoWETH`, Demo wstETH / rETH / weETH and one settable `DemoRateFeed` each. Maker = anvil account #0: 10 WETH shared as backing by three no-fee orders (one per yield token) plus one wstETH order with the 0.05% fee. Taker = anvil account #1: 5 WETH + 2 of each yield token, router approved. Keys default to anvil's public test keys (`DEMO_MAKER_PK` / `DEMO_TAKER_PK` override).
 
 The same `MovingPegExtruction` + order encoding was proven equal to the wei against 1inch's LIVE AquaSwapVMRouter and Aqua on a mainnet fork (`test/fork/LiveRouterExtruction.t.sol`).
+
+## Sepolia
+
+- 1inch's mainnet router `0x111111338c5091e8440b67b168bae16a668ac0de` has no code on Sepolia. The Sepolia AquaSwapVMRouter is `0x1111113db0e0ef9d0e3a50d5f094a3a57a26c0de`: same eip712Domain (`"1inch SwapVM v1.0"` / `"1.0.2"`), `AQUA()` = the canonical Aqua `0x1111113ccf1426a8e30e2bff5e005d929bf6a90a`, but different runtime bytecode (20379 bytes vs 20541 on mainnet).
+- Proven on a Sepolia fork, not assumed: of all 256 opcodes only `0x20` dispatches Extruction; the `[opcode u8][len u8][args]` wire format holds; salt is `0x14` (20); the flat fee is `0x15` (21) on the 1e9 scale. These match the v1.0.2 table, so the mainnet order encoding is unchanged on Sepolia.
+- Tokens: Lido wstETH `0xB82381A3fBD3FaFA77B3a7bE693342618240067b` (read by `WstETHRateProvider`) and WETH9 `0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14`.
+- The Sepolia router's quote/swap amounts equal, to the wei, both `RateSpaceAquaRouter` and a v1.0.2 AquaSwapVMRouter built from `lib/swap-vm-v1` on the same fork, with and without the fee (`test/fork/SepoliaRouterExtruction.t.sol`).
+- Run: export `SEPOLIA_RPC_URL`, then `forge test --match-path test/fork/SepoliaRouterExtruction.t.sol -vv`. Without it the suite is skipped.

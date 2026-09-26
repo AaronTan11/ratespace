@@ -203,15 +203,19 @@ function TradeComponent() {
       ) : (
         <div className="rs-cols">
           <section className="rs-panel" aria-label="Order ticket">
-            <div className="rs-tabs" role="group" aria-label="Market">
-              {markets.map((m) => (
-                <button key={m.key} type="button" aria-pressed={m.key === key} onClick={() => setKey(m.key)}>
-                  <span className="rs-dot teal" aria-hidden />
-                  {m.key}
-                </button>
-              ))}
+            <div className="rs-panel-head">
+              <span className="rs-eyebrow">Order ticket</span>
+              <span className="rs-meta">exact in · quote refresh {REFRESH_MS / 1000}s</span>
             </div>
-            <div className="rs-panel-body" style={{ gap: 16 }}>
+            <div className="rs-panel-body">
+              <div className="rs-seg" role="group" aria-label="Market">
+                {markets.map((m) => (
+                  <button key={m.key} type="button" aria-pressed={m.key === key} onClick={() => setKey(m.key)}>
+                    <span className="rs-dot teal" aria-hidden />
+                    {m.key}
+                  </button>
+                ))}
+              </div>
               <div className="rs-seg" role="group" aria-label="Direction">
                 <button type="button" aria-pressed={dir === "exit"} onClick={() => setDir("exit")}>
                   Exit: {key} → WETH
@@ -265,7 +269,7 @@ function TradeComponent() {
 
               <div className="rs-quote" aria-live="polite">
                 {decs.isError || q.isError ? (
-                  <div style={{ padding: "8px 0" }}>
+                  <div style={{ padding: "16px 0" }}>
                     <QueryError error={decs.isError ? decs.error : q.error} />
                   </div>
                 ) : q.data && decs.data ? (
@@ -285,20 +289,23 @@ function TradeComponent() {
                       </dd>
                       <dt>Quote vs feed</dt>
                       <dd>
-                        {q.data.implied === null || q.data.rate === 0n
-                          ? "n/a"
-                          : `${formatDeltaBps(q.data.rate, q.data.implied)} bps`}
+                        {q.data.implied === null || q.data.rate === 0n ? (
+                          "n/a"
+                        ) : (
+                          // the page's one --highlight number
+                          <span className="hl">{`${formatDeltaBps(q.data.rate, q.data.implied)} bps`}</span>
+                        )}
                       </dd>
                       <dt>Block</dt>
                       <dd>{q.data.blockNumber.toString()}</dd>
                     </dl>
                   </>
                 ) : amount === null ? (
-                  <div className="muted" style={{ padding: "8px 0" }}>
+                  <div className="muted" style={{ padding: "16px 0" }}>
                     Enter an amount to quote.
                   </div>
                 ) : (
-                  <div style={{ padding: "12px 0", display: "grid", gap: 8 }}>
+                  <div style={{ padding: "16px 0", display: "grid", gap: 8 }}>
                     <Skel w={160} />
                     <Skel w={220} />
                   </div>

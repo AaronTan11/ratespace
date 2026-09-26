@@ -8,6 +8,10 @@ export default defineConfig({
   server: {
     port: 3001,
   },
+  // Playwright specs live in e2e/ and run via `bun run test:e2e`, not vitest.
+  test: {
+    exclude: ["**/node_modules/**", "e2e/**"],
+  },
   resolve: {
     tsconfigPaths: true,
   },

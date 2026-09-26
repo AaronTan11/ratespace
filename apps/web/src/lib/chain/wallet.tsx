@@ -9,7 +9,7 @@ import {
   type WalletClient,
 } from "viem";
 
-import { CHAIN_ID, RPC_URL, anvil } from "./config";
+import { CHAIN_ID, RPC_URL, chain } from "./config";
 
 declare global {
   interface Window {
@@ -40,9 +40,10 @@ async function ensureChain(provider: EIP1193Provider) {
       params: [
         {
           chainId: hexId,
-          chainName: anvil.name,
-          nativeCurrency: anvil.nativeCurrency,
+          chainName: chain.name,
+          nativeCurrency: chain.nativeCurrency,
           rpcUrls: [RPC_URL],
+          ...(chain.blockExplorers ? { blockExplorerUrls: [chain.blockExplorers.default.url] } : {}),
         },
       ],
     });
@@ -79,7 +80,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const client = useMemo(
     () =>
       provider && address
-        ? createWalletClient({ account: address, chain: anvil, transport: custom(provider) })
+        ? createWalletClient({ account: address, chain, transport: custom(provider) })
         : undefined,
     [provider, address],
   );

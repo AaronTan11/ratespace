@@ -2,7 +2,7 @@ import { Button } from "@ratespace/ui/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import { CHAIN_ID, REFRESH_MS, anvil, publicClient } from "@/lib/chain/config";
+import { CHAIN_ID, REFRESH_MS, chain, publicClient } from "@/lib/chain/config";
 import { shortAddress, useWallet } from "@/lib/chain/wallet";
 
 export default function Header() {
@@ -24,7 +24,7 @@ export default function Header() {
     : rpcChain.data === undefined
       ? "RPC …"
       : rpcChain.data === CHAIN_ID
-        ? `${rpcChain.data} · ${anvil.name}`
+        ? `${rpcChain.data} · ${chain.name}`
         : `RPC chain ${rpcChain.data} ≠ ${CHAIN_ID}`;
   const walletOnWrongChain =
     wallet.address !== undefined && wallet.walletChainId !== undefined && wallet.walletChainId !== CHAIN_ID;

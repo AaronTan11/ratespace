@@ -33,8 +33,8 @@ async function readCard(m: Market, blockNumber?: bigint) {
   const order = toOrderTuple(m.order);
   const [rate, qt, hash] = await Promise.all([
     readRate(publicClient, m.feed, bn),
-    quote(publicClient, d.addresses.router, order, m.order.tokenYield, m.order.tokenWeth, ONE, takerData, undefined, bn),
-    routerHash(publicClient, d.addresses.router, order, bn),
+    quote(publicClient, m.router, order, m.order.tokenYield, m.order.tokenWeth, ONE, takerData, undefined, bn),
+    routerHash(publicClient, m.router, order, bn),
   ]);
   return { blockNumber: bn, rate, out: qt.amountOut, hash };
 }

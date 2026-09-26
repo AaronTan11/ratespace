@@ -73,7 +73,7 @@ function TradeComponent() {
       const [qt, rate] = await Promise.all([
         quote(
           publicClient,
-          d.addresses.router,
+          market!.router,
           toOrderTuple(market!.order),
           tokenIn!,
           tokenOut!,
@@ -106,7 +106,7 @@ function TradeComponent() {
         publicClient,
         wallet.client,
         wallet.address,
-        d.addresses.router,
+        market.router,
         toOrderTuple(market.order),
         tokenIn,
         tokenOut,

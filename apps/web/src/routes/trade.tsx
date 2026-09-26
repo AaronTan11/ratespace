@@ -11,12 +11,13 @@ import { formatUnits, parseUnits, zeroAddress } from "viem";
 
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
-import { REFRESH_MS, publicClient } from "@/lib/chain/config";
+import { txUrl } from "@/lib/chain/chains";
+import { REFRESH_MS, chain, publicClient } from "@/lib/chain/config";
 import { loaded, marketsOf, toOrderTuple, type YieldKey } from "@/lib/chain/deployments";
 import { readRate } from "@/lib/chain/feeds";
 import { formatFixed, ratio1e18 } from "@/lib/chain/math";
 import { buildTakerData } from "@/lib/chain/orderBuilder";
-import { quote, swap } from "@/lib/chain/router";
+import { quote, swap, type SwapResult } from "@/lib/chain/router";
 import { decimals } from "@/lib/chain/tokens";
 import { useWallet } from "@/lib/chain/wallet";
 
@@ -39,6 +40,22 @@ function parseAmount(s: string, dec: number): bigint | null {
   }
 }
 
+function TxLine({ label, hash }: { label: string; hash: string }) {
+  const url = txUrl(chain, hash);
+  return (
+    <div>
+      {label} tx{" "}
+      {url ? (
+        <a className="font-mono underline" href={url} target="_blank" rel="noreferrer">
+          {hash}
+        </a>
+      ) : (
+        <span className="font-mono">{hash}</span>
+      )}
+    </div>
+  );
+}
+
 function TradeComponent() {
   const wallet = useWallet();
   const qc = useQueryClient();
@@ -46,6 +63,7 @@ function TradeComponent() {
   const [dir, setDir] = useState<Direction>("exit");
   const [amountStr, setAmountStr] = useState("0.1");
   const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState<SwapResult | null>(null);
 
   const market = markets.find((m) => m.key === key);
   const tokenIn = market ? (dir === "exit" ? market.order.tokenYield : market.order.tokenWeth) : undefined;
@@ -73,7 +91,7 @@ function TradeComponent() {
       const [qt, rate] = await Promise.all([
         quote(
           publicClient,
-          d.addresses.router,
+          market!.router,
           toOrderTuple(market!.order),
           tokenIn!,
           tokenOut!,
@@ -106,7 +124,7 @@ function TradeComponent() {
         publicClient,
         wallet.client,
         wallet.address,
-        d.addresses.router,
+        market.router,
         toOrderTuple(market.order),
         tokenIn,
         tokenOut,
@@ -119,6 +137,7 @@ function TradeComponent() {
         }`,
         duration: 20000,
       });
+      setLast(r);
       console.info("[trade] swap", { ...r, amountIn: r.amountIn.toString(), amountOut: r.amountOut.toString() });
       await qc.invalidateQueries();
     } catch (e) {
@@ -135,6 +154,10 @@ function TradeComponent() {
       <h1 className="text-lg font-semibold">Trade</h1>
       {!loaded.deployed ? (
         <NotDeployed />
+      ) : markets.length === 0 ? (
+        <p className="text-muted-foreground">
+          The deployments file ({loaded.source}) has no no-fee order for any yield token.
+        </p>
       ) : (
         <Card>
           <CardHeader>
@@ -198,6 +221,12 @@ function TradeComponent() {
             <Button className="w-full" onClick={() => void onSwap()} disabled={busy || !q.data || !wallet.address}>
               {busy ? "Swapping…" : wallet.address ? "Swap" : "Connect wallet to swap"}
             </Button>
+            {last ? (
+              <div className="space-y-1 text-xs break-all text-muted-foreground">
+                {last.approveTx ? <TxLine label="approve" hash={last.approveTx} /> : null}
+                <TxLine label="swap" hash={last.swapTx} />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}

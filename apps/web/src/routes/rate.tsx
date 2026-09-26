@@ -9,7 +9,7 @@ import { formatUnits, zeroAddress, type Hash } from "viem";
 
 import NotDeployed from "@/components/not-deployed";
 import QueryError from "@/components/query-error";
-import { REFRESH_MS, publicClient } from "@/lib/chain/config";
+import { IS_LOCAL_DEMO, REFRESH_MS, publicClient } from "@/lib/chain/config";
 import { loaded, marketsOf, toOrderTuple, type Market } from "@/lib/chain/deployments";
 import { NotMakerError, readRate, simulateReport } from "@/lib/chain/feeds";
 import { formatDeltaBps, formatFixed } from "@/lib/chain/math";
@@ -33,8 +33,8 @@ async function readCard(m: Market, blockNumber?: bigint) {
   const order = toOrderTuple(m.order);
   const [rate, qt, hash] = await Promise.all([
     readRate(publicClient, m.feed, bn),
-    quote(publicClient, d.addresses.router, order, m.order.tokenYield, m.order.tokenWeth, ONE, takerData, undefined, bn),
-    routerHash(publicClient, d.addresses.router, order, bn),
+    quote(publicClient, m.router, order, m.order.tokenYield, m.order.tokenWeth, ONE, takerData, undefined, bn),
+    routerHash(publicClient, m.router, order, bn),
   ]);
   return { blockNumber: bn, rate, out: qt.amountOut, hash };
 }
@@ -120,9 +120,15 @@ function RateCard({ m }: { m: Market }) {
         ) : (
           <Skeleton className="h-12 w-full" />
         )}
-        <Button onClick={() => void onStep()} disabled={busy || !wallet.address}>
-          {busy ? "Sending…" : "Simulate report +1 bp"}
-        </Button>
+        {IS_LOCAL_DEMO ? (
+          <Button onClick={() => void onStep()} disabled={busy || !wallet.address}>
+            {busy ? "Sending…" : "Simulate report +1 bp"}
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Rate comes from Lido's Sepolia oracle; it updates when Lido reports.
+          </p>
+        )}
         {step ? (
           <div className="space-y-1 border p-2">
             <div className="flex justify-between gap-2">

@@ -24,7 +24,7 @@ async function readHome() {
   // Pin every read to one block so the numbers on screen are mutually consistent.
   const blockNumber = await publicClient.getBlockNumber();
   const maker = markets[0]?.order.maker;
-  if (!maker) throw new Error("deployments file has no no-fee orders for wstETH/rETH/weETH");
+  if (!maker) throw new Error("deployments file has no no-fee order for any yield token");
   const [walletWeth, rows] = await Promise.all([
     balanceOf(publicClient, d.addresses.weth, maker, blockNumber),
     Promise.all(
@@ -35,7 +35,7 @@ async function readHome() {
             publicClient,
             d.addresses.aqua,
             m.order.maker,
-            d.addresses.router,
+            m.router,
             m.order.strategyHash,
             m.order.tokenWeth,
             blockNumber,

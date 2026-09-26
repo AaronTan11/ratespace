@@ -2,7 +2,7 @@ import { Button } from "@ratespace/ui/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import { CHAIN_ID, REFRESH_MS, anvil, publicClient } from "@/lib/chain/config";
+import { CHAIN_ID, REFRESH_MS, chain, publicClient } from "@/lib/chain/config";
 import { shortAddress, useWallet } from "@/lib/chain/wallet";
 
 export default function Header() {
@@ -24,10 +24,10 @@ export default function Header() {
     : rpcChain.data === undefined
       ? "RPC …"
       : rpcChain.data === CHAIN_ID
-        ? `${rpcChain.data} · ${anvil.name}`
+        ? `${rpcChain.data} · ${chain.name}`
         : `RPC chain ${rpcChain.data} ≠ ${CHAIN_ID}`;
   const walletOnWrongChain =
-    wallet.address !== undefined && wallet.walletChainId !== undefined && wallet.walletChainId !== CHAIN_ID;
+    wallet.available && wallet.walletChainId !== undefined && wallet.walletChainId !== CHAIN_ID;
 
   return (
     <div>
@@ -49,11 +49,6 @@ export default function Header() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span className="border px-2 py-1 font-mono">{rpcLabel}</span>
-          {walletOnWrongChain ? (
-            <span className="border border-destructive px-2 py-1 text-destructive">
-              wallet on chain {wallet.walletChainId}
-            </span>
-          ) : null}
           {wallet.address ? (
             <span className="border px-2 py-1 font-mono">{shortAddress(wallet.address)}</span>
           ) : (
@@ -63,6 +58,21 @@ export default function Header() {
           )}
         </div>
       </div>
+      {walletOnWrongChain ? (
+        <div className="flex items-center gap-2 px-4 pb-2 text-xs text-destructive">
+          <span>
+            Wallet is on chain {wallet.walletChainId}; this app uses {CHAIN_ID} · {chain.name}.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void wallet.switchNetwork()}
+            disabled={wallet.switching}
+          >
+            {wallet.switching ? "Switching…" : "Switch network"}
+          </Button>
+        </div>
+      ) : null}
       {wallet.error ? <p className="px-4 pb-2 text-xs text-destructive">{wallet.error}</p> : null}
       <hr />
     </div>

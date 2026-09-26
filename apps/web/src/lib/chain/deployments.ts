@@ -1,10 +1,21 @@
 import type { Address, Hex } from "viem";
 import { z } from "zod";
 
+import { CHAIN_ID } from "./config";
 import example from "./deployments.example.json";
 
-// Shape written by the demo lane (packages/contracts/script/DeployDemo.s.sol).
-// If the real file differs when it lands, adapt THIS loader only.
+// Shapes read from packages/contracts/deployments/<chainId>.json (flat keys, normalised below):
+//
+// 31337 (demo lane, script/DeployDemo.s.sol): Aqua, AquaSwapVMRouter, MovingPegExtruction,
+//   RateSpaceOrderBuilder, DemoWETH, DemoWstETH, DemoRETH, DemoWeETH, RateFeedWstETH, RateFeedRETH,
+//   RateFeedWeETH, orders[] (DemoRateFeed feeds: rate() and set()).
+// 11155111 (sepolia-deploy lane): Aqua, AquaSwapVMRouter, RateSpaceAquaRouter, MovingPegExtruction,
+//   RateSpaceOrderBuilder, WETH, WstETH, RateProviderWstETH, orders[] where rateFeed = RateProviderWstETH
+//   (WstETHRateProvider: rate() only) and each order may carry `router` = the router it was shipped to.
+//   No rETH/weETH on Sepolia.
+//
+// Only wstETH is a required market; rETH/weETH (and their feeds) are optional. Unknown keys are ignored.
+// An order without `router` uses AquaSwapVMRouter (addresses.router).
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected a 20-byte hex address");
 const hex = z.string().regex(/^0x([0-9a-fA-F]{2})*$/, "expected even-length hex");
@@ -22,6 +33,7 @@ const orderSchema = z.object({
   tokenWeth: address,
   hasFee: z.boolean(),
   rateFeed: address,
+  router: address.optional(),
 });
 
 const deploymentsSchema = z.object({
@@ -29,15 +41,16 @@ const deploymentsSchema = z.object({
   addresses: z.object({
     aqua: address,
     router: address,
-    extruction: address,
     orderBuilder: address,
     weth: address,
     wstETH: address,
-    rETH: address,
-    weETH: address,
     feedWstETH: address,
-    feedRETH: address,
-    feedWeETH: address,
+    extruction: address.optional(),
+    ourRouter: address.optional(),
+    rETH: address.optional(),
+    weETH: address.optional(),
+    feedRETH: address.optional(),
+    feedWeETH: address.optional(),
   }),
   orders: z.array(orderSchema),
 });
@@ -56,22 +69,14 @@ export interface DeployedOrder {
   tokenWeth: Address;
   hasFee: boolean;
   rateFeed: Address;
+  /** Router the order was shipped to; absent means addresses.router (AquaSwapVMRouter). */
+  router?: Address;
 }
 
 export interface Deployments {
   chainId: number;
-  addresses: Record<
-    | "aqua"
-    | "router"
-    | "extruction"
-    | "orderBuilder"
-    | "weth"
-    | YieldKey
-    | "feedWstETH"
-    | "feedRETH"
-    | "feedWeETH",
-    Address
-  >;
+  addresses: Record<"aqua" | "router" | "orderBuilder" | "weth" | "wstETH" | "feedWstETH", Address> &
+    Partial<Record<"extruction" | "ourRouter" | "rETH" | "weETH" | "feedRETH" | "feedWeETH", Address>>;
   orders: DeployedOrder[];
 }
 
@@ -89,6 +94,11 @@ const FLAT_TO_ADDRESS: Record<string, keyof Deployments["addresses"]> = {
   RateFeedWstETH: "feedWstETH",
   RateFeedRETH: "feedRETH",
   RateFeedWeETH: "feedWeETH",
+  // Sepolia (real Lido wstETH market)
+  WETH: "weth",
+  WstETH: "wstETH",
+  RateProviderWstETH: "feedWstETH",
+  RateSpaceAquaRouter: "ourRouter",
 };
 
 function normaliseDeployments(raw: unknown): unknown {
@@ -128,7 +138,7 @@ export function toOrderTuple(order: DeployedOrder) {
   return { maker: order.maker, traits: BigInt(order.traits), data: order.data } as const;
 }
 
-export type DeploymentsSource = "deployments/31337.json" | "deployments.example.json";
+export type DeploymentsSource = `deployments/${number}.json` | "deployments.example.json";
 
 export interface LoadedDeployments {
   deployed: boolean;
@@ -137,24 +147,33 @@ export interface LoadedDeployments {
   error?: string;
 }
 
-// import.meta.glob resolves to {} when the file does not exist yet, so the app still builds
-// before the demo lane has run script/demo.sh.
-const realFile = import.meta.glob<{ default: unknown }>(
-  "../../../../../packages/contracts/deployments/31337.json",
+// Every packages/contracts/deployments/<chainId>.json (ABI dumps excluded). import.meta.glob resolves
+// to {} when none exists yet, so the app still builds before a deploy has run.
+const realFiles = import.meta.glob<{ default: unknown }>(
+  ["../../../../../packages/contracts/deployments/*.json", "!../../../../../packages/contracts/deployments/*.abi.json"],
   { eager: true },
 );
 
-export function loadDeployments(files: Record<string, { default: unknown }> = realFile): LoadedDeployments {
-  const mod = Object.values(files)[0];
+function rawChainId(raw: unknown): unknown {
+  return typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>).chainId : undefined;
+}
+
+/** Picks the deployments file whose `chainId` equals `chainId`; falls back to the example file. */
+export function loadDeployments(
+  files: Record<string, { default: unknown }> = realFiles,
+  chainId: number = CHAIN_ID,
+): LoadedDeployments {
+  const mod = Object.values(files).find((f) => Number(rawChainId(f.default)) === chainId);
+  const source: DeploymentsSource = `deployments/${chainId}.json`;
   if (mod) {
     try {
-      return { deployed: true, source: "deployments/31337.json", deployments: parseDeployments(mod.default) };
+      return { deployed: true, source, deployments: parseDeployments(mod.default) };
     } catch (e) {
       return {
         deployed: false,
         source: "deployments.example.json",
         deployments: parseDeployments(example),
-        error: `packages/contracts/deployments/31337.json does not match the expected shape: ${String(e)}`,
+        error: `packages/contracts/${source} does not match the expected shape: ${String(e)}`,
       };
     }
   }
@@ -172,19 +191,33 @@ const FEED_KEY: Record<YieldKey, "feedWstETH" | "feedRETH" | "feedWeETH"> = {
 export interface Market {
   key: YieldKey;
   token: Address;
+  /** The yield token's rate source: DemoRateFeed on anvil, WstETHRateProvider on Sepolia. */
   feed: Address;
+  /** Router this market's order lives on (quote / swap / hash / approve target, Aqua app). */
+  router: Address;
   order: DeployedOrder;
 }
 
-/** One no-fee (shared-backing) order per yield token, matched by the token address. */
+/**
+ * One no-fee (shared-backing) order per yield token, matched by the token address.
+ * Only markets whose token address AND order exist are returned.
+ */
 export function marketsOf(d: Deployments): Market[] {
   const out: Market[] = [];
   for (const key of YIELD_KEYS) {
     const token = d.addresses[key];
+    if (!token) continue;
     const order = d.orders.find(
       (o) => !o.hasFee && o.tokenYield.toLowerCase() === token.toLowerCase(),
     );
-    if (order) out.push({ key, token, feed: d.addresses[FEED_KEY[key]], order });
+    if (!order) continue;
+    out.push({
+      key,
+      token,
+      feed: d.addresses[FEED_KEY[key]] ?? order.rateFeed,
+      router: order.router ?? d.addresses.router,
+      order,
+    });
   }
   return out;
 }

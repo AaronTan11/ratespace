@@ -4,6 +4,9 @@ pragma solidity 0.8.30;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
+import {IAqua} from "@aqua-v1/src/interfaces/IAqua.sol";
+
+import {SepoliaAddresses} from "../../script/SepoliaAddresses.sol";
 import {ShipSepolia} from "../../script/ShipSepolia.s.sol";
 import {VerifySepolia} from "../../script/VerifySepolia.s.sol";
 
@@ -19,6 +22,9 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         "DeploySepolia: deployments file exists but cannot be parsed; fix or remove it (or set DEPLOY_OVERWRITE=1)";
     string internal constant PHANTOM_MSG =
         "VerifySepolia: PHANTOM orders in the deployments file (never shipped); re-run with PRUNE_PHANTOMS=1";
+    string internal constant DOCKED_MSG =
+        "VerifySepolia: DOCKED orders in the deployments file; re-run with PRUNE_PHANTOMS=1 to remove them";
+    string internal constant MISSING_MSG = "VerifySepolia: CONTRACT_MISSING (a recorded contract has no code)";
     /// @dev A real record corrupted by a trailing comma
     string internal constant CORRUPT_JSON = '{"orders":[{"a":1},]}';
 
@@ -125,9 +131,10 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
 
         VerifySepolia v = _verifyScript(path);
-        bool[] memory live = v.liveOrders(d, orders);
-        assertEq(live.length, 2, "two orders checked");
-        assertTrue(live[0] && live[1], "both shipped orders OK");
+        VerifySepolia.Status[] memory st = v.liveness(d, orders);
+        assertEq(st.length, 2, "two orders checked");
+        _assertStatus(st[0], VerifySepolia.Status.OK, "order 0 OK");
+        _assertStatus(st[1], VerifySepolia.Status.OK, "order 1 OK");
         assertEq(v.missingContracts(d), 0, "every recorded contract has code");
         v.run();
         assertEq(vm.readFile(path), before, "verify without phantoms leaves the file untouched");
@@ -137,8 +144,10 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
     /// @dev A record the chain never saw (order 0 copied with strategyHash keccak256("phantom")) appended to the
     ///   file: VerifySepolia flags it PHANTOM and reverts; with PRUNE_PHANTOMS=1 it rewrites the file with exactly
     ///   the 2 real orders, byte-identical to the file before the append.
-    /// @dev The only test that sets PRUNE_PHANTOMS (process-global env); every expectation that depends on it
-    ///   lives here, and it is set back to "" before the asserts
+    /// @dev The only test that sets PRUNE_PHANTOMS (process-global env), so every run() expectation that depends
+    ///   on it lives here: PHANTOM (appended record, and a live hash with a wrong token field), PRUNE_PHANTOMS "0" /
+    ///   "true" (no prune), a missing contract with PRUNE_PHANTOMS=1 (reverts before any write), and DOCKED.
+    ///   It sets the variable back to "" before the asserts that follow each prune.
     function test_Verify_PhantomRevertsThenPrunes() public onFork {
         string memory path = _testPath("verify-phantom");
         address b = _broadcaster();
@@ -153,25 +162,160 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         withPhantom[0] = orders[0];
         withPhantom[1] = orders[1];
         // A fresh copy: `= orders[0]` would alias the memory struct and change order 0 too
-        withPhantom[2] = abi.decode(abi.encode(orders[0]), (OrderRecord));
+        withPhantom[2] = _copy(orders[0]);
         withPhantom[2].strategyHash = vm.toString(keccak256("phantom"));
         vm.writeFile(path, _deploymentJson(d, withPhantom));
         string memory tampered = vm.readFile(path);
 
         VerifySepolia v = _verifyScript(path);
-        bool[] memory live = v.liveOrders(d, withPhantom);
-        assertTrue(live[0] && live[1] && !live[2], "real orders OK, appended record PHANTOM");
+        VerifySepolia.Status[] memory st = v.liveness(d, withPhantom);
+        _assertStatus(st[0], VerifySepolia.Status.OK, "order 0 OK");
+        _assertStatus(st[1], VerifySepolia.Status.OK, "order 1 OK");
+        _assertStatus(st[2], VerifySepolia.Status.PHANTOM, "appended record PHANTOM");
 
         vm.expectRevert(bytes(PHANTOM_MSG));
         v.run();
         assertEq(vm.readFile(path), tampered, "refused verify left the file untouched");
+
+        // A: live hash, wrong tokenWeth -> PHANTOM, run() reverts
+        string memory wrongPath = _testPath("verify-wrongtoken");
+        OrderRecord[] memory wrong = new OrderRecord[](1);
+        wrong[0] = _copy(orders[0]);
+        wrong[0].tokenWeth = vm.toString(SepoliaAddresses.STETH);
+        vm.writeFile(wrongPath, _deploymentJson(d, wrong));
+        VerifySepolia vWrong = _verifyScript(wrongPath);
+        vm.expectRevert(bytes(PHANTOM_MSG));
+        vWrong.run();
+        vm.removeFile(wrongPath);
+
+        // D: PRUNE_PHANTOMS must be exactly "1"
+        vm.setEnv("PRUNE_PHANTOMS", "0");
+        vm.expectRevert(bytes(PHANTOM_MSG));
+        v.run();
+        vm.setEnv("PRUNE_PHANTOMS", "true");
+        vm.expectRevert(bytes(PHANTOM_MSG));
+        v.run();
+        vm.setEnv("PRUNE_PHANTOMS", "");
+        assertEq(vm.readFile(path), tampered, "PRUNE_PHANTOMS 0 / true: file untouched");
+
+        // C ordering: a missing contract reverts before any prune write, even with PRUNE_PHANTOMS=1
+        string memory missPath = _testPath("verify-missing-prune");
+        Deployment memory dMiss = abi.decode(abi.encode(d), (Deployment));
+        dMiss.rateProviderWstEth = makeAddr("no-code");
+        vm.writeFile(missPath, _deploymentJson(dMiss, withPhantom));
+        string memory missBefore = vm.readFile(missPath);
+        VerifySepolia vMiss = _verifyScript(missPath);
+        vm.setEnv("PRUNE_PHANTOMS", "1");
+        vm.expectRevert(bytes(MISSING_MSG));
+        vMiss.run();
+        vm.setEnv("PRUNE_PHANTOMS", "");
+        assertEq(keccak256(bytes(vm.readFile(missPath))), keccak256(bytes(missBefore)), "missing: file untouched");
+        vm.removeFile(missPath);
 
         vm.setEnv("PRUNE_PHANTOMS", "1");
         v.run();
         vm.setEnv("PRUNE_PHANTOMS", "");
         assertEq(vm.readFile(path), real, "pruned file == the 2 real orders, byte-identical");
         assertEq(_orderCount(path), 2, "pruned: 2 orders");
+
+        // DOCKED: order 0 closed by the maker -> DOCKED (order 1 OK); reverts without prune, pruned with it
+        _dock(d, orders[0]);
+        st = v.liveness(d, orders);
+        _assertStatus(st[0], VerifySepolia.Status.DOCKED, "docked order 0 DOCKED");
+        _assertStatus(st[1], VerifySepolia.Status.OK, "order 1 OK");
+        vm.expectRevert(bytes(DOCKED_MSG));
+        v.run();
+        assertEq(vm.readFile(path), real, "refused verify (docked) left the file untouched");
+
+        vm.setEnv("PRUNE_PHANTOMS", "1");
+        v.run();
+        vm.setEnv("PRUNE_PHANTOMS", "");
+        OrderRecord[] memory only1 = new OrderRecord[](1);
+        only1[0] = orders[1];
+        assertEq(vm.readFile(path), _deploymentJson(d, only1), "pruned docked: file == order 1, byte-identical");
         vm.removeFile(path);
+    }
+
+    /// @dev L: orders shipped through RateSpaceAquaRouter (USE_ONEINCH_ROUTER=false) are read at their own
+    ///   router: both OK, run() succeeds, file untouched
+    function test_Verify_RateSpaceRouterOrdersOk() public onFork {
+        string memory path = _testPath("verify-rsrouter");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        _shipScript(path, false).run();
+        string memory before = vm.readFile(path);
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+        assertEq(orders.length, 2, "shipped");
+        assertEq(vm.parseAddress(orders[0].router), d.rateSpaceRouter, "order 0 on RateSpaceAquaRouter");
+        assertEq(vm.parseAddress(orders[1].router), d.rateSpaceRouter, "order 1 on RateSpaceAquaRouter");
+
+        VerifySepolia v = _verifyScript(path);
+        VerifySepolia.Status[] memory st = v.liveness(d, orders);
+        _assertStatus(st[0], VerifySepolia.Status.OK, "RateSpaceAquaRouter order 0 OK");
+        _assertStatus(st[1], VerifySepolia.Status.OK, "RateSpaceAquaRouter order 1 OK");
+        v.run();
+        assertEq(vm.readFile(path), before, "verify left the file untouched");
+        vm.removeFile(path);
+    }
+
+    /// @dev A: a live strategyHash with a wrong token field on either side is PHANTOM (the run() revert is in
+    ///   test_Verify_PhantomRevertsThenPrunes, which owns PRUNE_PHANTOMS)
+    function test_Verify_WrongTokenIsPhantom() public onFork {
+        string memory path = _testPath("verify-wrongtoken-view");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        _shipScript(path, true).run();
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+
+        OrderRecord[] memory wrong = new OrderRecord[](2);
+        wrong[0] = _copy(orders[0]);
+        wrong[0].tokenWeth = vm.toString(SepoliaAddresses.STETH);
+        wrong[1] = _copy(orders[1]);
+        wrong[1].tokenYield = vm.toString(SepoliaAddresses.STETH);
+        VerifySepolia.Status[] memory st = _verifyScript(path).liveness(d, wrong);
+        _assertStatus(st[0], VerifySepolia.Status.PHANTOM, "wrong tokenWeth -> PHANTOM");
+        _assertStatus(st[1], VerifySepolia.Status.PHANTOM, "wrong tokenYield -> PHANTOM");
+        vm.removeFile(path);
+    }
+
+    /// @dev C: a recorded contract without code -> run() reverts with MISSING_MSG, file untouched (the missing
+    ///   check runs before the prune check, so this does not depend on PRUNE_PHANTOMS)
+    function test_Verify_MissingContractReverts() public onFork {
+        string memory path = _testPath("verify-missing");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        _shipScript(path, true).run();
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+        d.rateProviderWstEth = makeAddr("no-code");
+        vm.writeFile(path, _deploymentJson(d, orders));
+        string memory before = vm.readFile(path);
+
+        VerifySepolia v = _verifyScript(path);
+        assertEq(v.missingContracts(d), 1, "one recorded contract without code");
+        vm.expectRevert(bytes(MISSING_MSG));
+        v.run();
+        assertEq(vm.readFile(path), before, "refused verify left the file untouched");
+        vm.removeFile(path);
+    }
+
+    function _copy(OrderRecord memory o) internal pure returns (OrderRecord memory) {
+        return abi.decode(abi.encode(o), (OrderRecord));
+    }
+
+    /// @dev Closes order `o` in Aqua as its maker (Aqua.dock over both tokens)
+    function _dock(Deployment memory d, OrderRecord memory o) internal {
+        address[] memory tokens = new address[](2);
+        tokens[0] = vm.parseAddress(o.tokenYield);
+        tokens[1] = vm.parseAddress(o.tokenWeth);
+        vm.prank(vm.parseAddress(o.maker));
+        IAqua(d.aqua).dock(vm.parseAddress(o.router), vm.parseBytes32(o.strategyHash), tokens);
+    }
+
+    function _assertStatus(VerifySepolia.Status got, VerifySepolia.Status want, string memory err) internal pure {
+        assertEq(uint256(got), uint256(want), err);
     }
 
     /// @dev M10 helper: the write gate is open in a forge test (not ScriptDryRun). The dry-run branch itself can

@@ -95,6 +95,10 @@ export default function Header() {
               className="rs-chip"
               onClick={() => void wallet.connect()}
               disabled={wallet.connecting}
+              // Until a browser wallet is detected (SSR, before hydration, or none installed) the accessible
+              // name says so, so nothing clicks "Connect wallet" before it can work.
+              aria-label={wallet.available ? undefined : "Connect wallet (no browser wallet detected)"}
+              title={wallet.available ? undefined : "No browser wallet detected"}
             >
               <span className="rs-dot" aria-label="not connected" />
               {wallet.connecting ? "Connecting…" : "Connect wallet"}

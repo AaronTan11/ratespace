@@ -170,6 +170,30 @@ function RateCard({ m }: { m: Market }) {
               </dd>
               <dt>Block</dt>
               <dd>{q.data ? q.data.blockNumber.toString() : "—"}</dd>
+              {step ? (
+                <>
+                  <dt>Quote change</dt>
+                  <dd>
+                    <Delta before={step.before.out} after={step.after.out} />
+                  </dd>
+                  <dt>router.hash before</dt>
+                  <dd>
+                    <Hex value={step.before.hash} />
+                  </dd>
+                  <dt>router.hash after</dt>
+                  <dd>
+                    <Hex value={step.after.hash} />
+                  </dd>
+                  <dt>Oracle update tx</dt>
+                  <dd>
+                    <Hex value={step.tx} head={10} tail={8} />
+                  </dd>
+                  <dt>Update blocks</dt>
+                  <dd>
+                    {step.before.blockNumber.toString()} → {step.after.blockNumber.toString()}
+                  </dd>
+                </>
+              ) : null}
             </dl>
           </Details>
         </td>
@@ -218,30 +242,6 @@ function StepRow({ step }: { step: Step }) {
           <span>Order id</span>
           {unchanged ? <span className="muted">unchanged</span> : <span className="rs-chip sans bad">CHANGED</span>}
         </div>
-        <Details summary="Technical details" style={{ fontSize: 12 }}>
-          <dl className="rs-kv" style={{ maxWidth: 720 }}>
-            <dt>Quote change</dt>
-            <dd>
-              <Delta before={step.before.out} after={step.after.out} />
-            </dd>
-            <dt>router.hash before</dt>
-            <dd>
-              <Hex value={step.before.hash} />
-            </dd>
-            <dt>router.hash after</dt>
-            <dd>
-              <Hex value={step.after.hash} />
-            </dd>
-            <dt>Oracle update tx</dt>
-            <dd>
-              <Hex value={step.tx} head={10} tail={8} />
-            </dd>
-            <dt>Blocks</dt>
-            <dd>
-              {step.before.blockNumber.toString()} → {step.after.blockNumber.toString()}
-            </dd>
-          </dl>
-        </Details>
       </td>
     </tr>
   );

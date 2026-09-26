@@ -155,11 +155,13 @@ function RateCard({ m }: { m: Market }) {
   );
 }
 
-function Delta({ before, after }: { before: bigint; after: bigint }) {
+/** Mono delta chip: good/bad by sign; `hero` makes it the page's one --highlight number. */
+function Delta({ before, after, hero = false }: { before: bigint; after: bigint; hero?: boolean }) {
   if (before === 0n) return <span className="muted">n/a</span>;
   const d = formatDeltaBps(before, after);
   const sign = deltaSign(d);
-  return <span className={`rs-num ${sign > 0 ? "good" : sign < 0 ? "bad" : "muted"}`}>{d} bps</span>;
+  const tone = hero ? "hl" : sign > 0 ? "good" : sign < 0 ? "bad" : "";
+  return <span className={`rs-chip${tone ? ` ${tone}` : ""}`}>{d} bps</span>;
 }
 
 function StepRow({ step }: { step: Step }) {
@@ -172,7 +174,7 @@ function StepRow({ step }: { step: Step }) {
           <span className="rs-num">
             <Num value={step.before.rate} /> <span className="muted">→</span> <Num value={step.after.rate} />
           </span>
-          <Delta before={step.before.rate} after={step.after.rate} />
+          <Delta before={step.before.rate} after={step.after.rate} hero />
 
           <span className="rs-eyebrow">Quote</span>
           <span className="rs-num">
@@ -184,7 +186,7 @@ function StepRow({ step }: { step: Step }) {
           <span className="rs-num">
             <Hex value={step.before.hash} /> <span className="muted">→</span> <Hex value={step.after.hash} />
           </span>
-          <span className={`rs-chip sans ${unchanged ? "good" : "bad"}`}>{unchanged ? "unchanged" : "CHANGED"}</span>
+          {unchanged ? <span className="muted">unchanged</span> : <span className="rs-chip sans bad">CHANGED</span>}
 
           <span className="rs-eyebrow">Tx</span>
           <span className="rs-num">

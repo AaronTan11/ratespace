@@ -25,7 +25,8 @@ import { SepoliaAddresses } from "./SepoliaAddresses.sol";
 import { SepoliaDeployment } from "./SepoliaDeployment.sol";
 
 /// @notice Run by the MAKER on Sepolia after DeploySepolia: ships two wstETH/WETH MovingPeg orders through Aqua
-///   (order 1 without fee, order 2 with the 0.05% flat fee) and appends them to deployments/11155111.json.
+///   (order 1 without fee, order 2 with the 0.05% flat fee) and appends them to deployments/11155111.json
+///   (or DEPLOYMENTS_PATH).
 /// @dev The maker's wallet must already hold the deposits (stETH.submit -> wstETH.wrap, WETH.deposit); Aqua is
 ///   virtual, so ship moves no tokens, and both orders are backed by the same wallet balances.
 /// @dev Env (all optional):
@@ -59,7 +60,8 @@ contract ShipSepolia is SepoliaDeployment {
 
     function run() external {
         require(block.chainid == SepoliaAddresses.CHAIN_ID, "ShipSepolia: Sepolia (chain 11155111) only");
-        (Deployment memory d, OrderRecord[] memory prev) = _readDeployment(DEPLOYMENTS_PATH);
+        string memory path = _deploymentsPath();
+        (Deployment memory d, OrderRecord[] memory prev) = _readDeployment(path);
         ShipParams memory p = params(d);
 
         vm.startBroadcast();
@@ -72,7 +74,22 @@ contract ShipSepolia is SepoliaDeployment {
         all[prev.length] = shipped[0];
         all[prev.length + 1] = shipped[1];
         d.maker = maker;
-        _writeDeployment(DEPLOYMENTS_PATH, d, all);
+        _writeDeployment(path, d, all);
+    }
+
+    /// @dev Test hooks set by setSalt / setUseOneInchRouter (vm.setEnv is process-global and races between
+    ///   parallel tests). 0 = not set (use env / default).
+    uint256 internal saltOverride;
+    uint8 internal routerOverride;
+
+    /// @notice Test hook: use `salt` instead of SHIP_SALT
+    function setSalt(uint64 salt) external {
+        saltOverride = uint256(salt) + 1;
+    }
+
+    /// @notice Test hook: use `useOneInch` instead of USE_ONEINCH_ROUTER
+    function setUseOneInchRouter(bool useOneInch) external {
+        routerOverride = useOneInch ? 1 : 2;
     }
 
     /// @notice Ship parameters from env, with the defaults documented on the contract
@@ -80,8 +97,8 @@ contract ShipSepolia is SepoliaDeployment {
         p.rate = IRateProvider(d.rateProviderWstEth).rate();
         p.depWeth = vm.envOr("SHIP_WETH_DEPOSIT", DEFAULT_WETH_DEPOSIT); // TODO-OWNER
         p.depWst = vm.envOr("SHIP_WSTETH_DEPOSIT", p.depWeth * ONE / p.rate); // TODO-OWNER
-        p.salt = uint64(vm.envOr("SHIP_SALT", uint256(1)));
-        p.useOneInch = vm.envOr("USE_ONEINCH_ROUTER", true);
+        p.salt = saltOverride > 0 ? uint64(saltOverride - 1) : uint64(vm.envOr("SHIP_SALT", uint256(1)));
+        p.useOneInch = routerOverride > 0 ? routerOverride == 1 : vm.envOr("USE_ONEINCH_ROUTER", true);
     }
 
     /// @dev Approves Aqua for both tokens and ships order 1 (no fee, salt) and order 2 (fee, salt + 1).

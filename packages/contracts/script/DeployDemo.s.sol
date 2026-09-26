@@ -17,7 +17,7 @@ import { DemoRateFeed } from "../src/demo/mocks/DemoRateFeed.sol";
 /// @notice LOCAL DEMO ONLY: deploys 1inch Aqua 0.1.0 + AquaSwapVMRouter v1.0.2 (from lib/swap-vm-v1), the
 ///   MovingPegExtruction target, the order builder and demo tokens/feeds to anvil (chain 31337), seeds the
 ///   maker (anvil account #0) with four shipped orders and the taker (anvil account #1) with balances +
-///   router approvals, and writes deployments/31337.json.
+///   router approvals, and writes deployments/31337.json (or DEPLOYMENTS_PATH).
 /// @dev Keys: DEMO_MAKER_PK / DEMO_TAKER_PK, defaulting to anvil's public default test keys #0 / #1
 ///   (printed by `anvil` at startup; they are not secrets).
 contract DeployDemo is Script {
@@ -57,6 +57,20 @@ contract DeployDemo is Script {
         address tokenYield;
         address feed;
         bool hasFee;
+    }
+
+    /// @dev Set by tests through setDeploymentsPath (process-global vm.setEnv would race between parallel tests)
+    string internal deploymentsPathOverride;
+
+    /// @notice Test hook: write `path` instead of DEPLOYMENTS_PATH / deployments/31337.json
+    function setDeploymentsPath(string calldata path) external {
+        deploymentsPathOverride = path;
+    }
+
+    /// @dev setDeploymentsPath's path, else env DEPLOYMENTS_PATH, else deployments/31337.json
+    function _deploymentsPath() internal view returns (string memory) {
+        if (bytes(deploymentsPathOverride).length > 0) return deploymentsPathOverride;
+        return vm.envOr("DEPLOYMENTS_PATH", string("deployments/31337.json"));
     }
 
     function run() external {
@@ -205,6 +219,6 @@ contract DeployDemo is Script {
             _orderJson(orders[3], w),
             "\n  ]\n}\n"
         );
-        vm.writeFile("deployments/31337.json", json);
+        vm.writeFile(_deploymentsPath(), json);
     }
 }

@@ -5,14 +5,28 @@ import { Script } from "forge-std/Script.sol";
 
 import { SepoliaAddresses } from "./SepoliaAddresses.sol";
 
-/// @notice Reads and writes deployments/11155111.json for DeploySepolia and ShipSepolia.
+/// @notice Reads and writes deployments/11155111.json (or DEPLOYMENTS_PATH) for DeploySepolia and ShipSepolia.
 /// @dev Frozen shape (the app codes against it; same key order as below):
 ///   { chainId, maker, Aqua, AquaSwapVMRouter, RateSpaceAquaRouter, MovingPegExtruction, RateSpaceOrderBuilder,
 ///     WETH, WstETH, RateProviderWstETH,
 ///     orders: [{ maker, traits (uint256 decimal string), data, program, strategyHash, tokenYield, tokenWeth,
 ///                hasFee, rateFeed, router }] }
 abstract contract SepoliaDeployment is Script {
-    string internal constant DEPLOYMENTS_PATH = "deployments/11155111.json";
+    string internal constant DEFAULT_DEPLOYMENTS_PATH = "deployments/11155111.json";
+
+    /// @dev Set by tests through setDeploymentsPath (process-global vm.setEnv would race between parallel tests)
+    string internal deploymentsPathOverride;
+
+    /// @notice Test hook: read/write `path` instead of DEPLOYMENTS_PATH / the default
+    function setDeploymentsPath(string calldata path) external {
+        deploymentsPathOverride = path;
+    }
+
+    /// @dev setDeploymentsPath's path, else env DEPLOYMENTS_PATH, else deployments/11155111.json
+    function _deploymentsPath() internal view returns (string memory) {
+        if (bytes(deploymentsPathOverride).length > 0) return deploymentsPathOverride;
+        return vm.envOr("DEPLOYMENTS_PATH", DEFAULT_DEPLOYMENTS_PATH);
+    }
 
     struct Deployment {
         address maker;

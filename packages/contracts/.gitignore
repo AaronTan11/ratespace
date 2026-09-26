@@ -8,3 +8,6 @@ anvil.log
 anvil.pid
 out-demo/
 cache-demo/
+deployments/11155111.fork.json
+deployments/*.bak
+deployments/test-*.json

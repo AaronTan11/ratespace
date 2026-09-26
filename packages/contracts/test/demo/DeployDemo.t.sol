@@ -35,6 +35,7 @@ contract DeployDemoHarness is DeployDemo {
     function rateWstEth() external pure returns (uint256) { return RATE_WSTETH; }
     function width() external pure returns (uint256) { return WIDTH; }
     function band() external pure returns (uint16) { return BAND; }
+    function deploymentsPath() external view returns (string memory) { return _deploymentsPath(); }
 
     function approveAqua(Deployed memory d) external {
         d.weth.approve(address(d.aqua), type(uint256).max);
@@ -335,8 +336,6 @@ contract DeployDemoTest is Test {
 
     // ===== DeployDemo.run() itself: the four-order table built by the script's own loop =====
 
-    string internal constant DEPLOYMENTS = "deployments/31337.json";
-
     struct Shipped {
         bytes32 strategyHash;
         ISwapVM.Order order;
@@ -414,17 +413,30 @@ contract DeployDemoTest is Test {
         emit log_named_string(string.concat(tag, " hasFee"), hasFee ? "true" : "false");
     }
 
-    /// @dev Calls the script's real run() (the loop at script/DeployDemo.s.sol:98-101), then reads the order table
-    ///   back from BOTH the Aqua Shipped/Pushed events and the deployments JSON run() writes. The tracked
-    ///   deployments/31337.json is restored byte-for-byte right after run() returns.
+    /// @dev Calls the script's real run() (the loop at script/DeployDemo.s.sol:112-115), then reads the order table
+    ///   back from BOTH the Aqua Shipped/Pushed events and the deployments JSON run() writes, to a test-only path
+    ///   (the tracked deployments/31337.json is never written by tests).
+    /// @dev script/demo.sh sets no DEPLOYMENTS_PATH: run() writes the tracked deployments/31337.json the app reads
+    function test_DeployDemo_DefaultDeploymentsPath() public {
+        if (bytes(vm.envOr("DEPLOYMENTS_PATH", string(""))).length > 0) {
+            vm.skip(true);
+            return;
+        }
+        DeployDemoHarness h = new DeployDemoHarness();
+        assertEq(h.deploymentsPath(), "deployments/31337.json", "default path");
+        h.setDeploymentsPath("deployments/test-demo-x.json");
+        assertEq(h.deploymentsPath(), "deployments/test-demo-x.json", "setter path");
+    }
+
     function test_DeployDemo_RunOrderTable() public {
-        string memory saved = vm.readFile(DEPLOYMENTS);
+        string memory path = "deployments/test-demo-order-table.json";
+        DeployDemo s = new DeployDemo();
+        s.setDeploymentsPath(path);
         vm.recordLogs();
-        new DeployDemo().run();
+        s.run();
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        string memory json = vm.readFile(DEPLOYMENTS);
-        vm.writeFile(DEPLOYMENTS, saved);
-        assertEq(keccak256(bytes(vm.readFile(DEPLOYMENTS))), keccak256(bytes(saved)), "deployments json restored");
+        string memory json = vm.readFile(path);
+        vm.removeFile(path);
 
         address aqua = vm.parseJsonAddress(json, ".Aqua");
         address weth = vm.parseJsonAddress(json, ".DemoWETH");
@@ -483,12 +495,15 @@ contract DeployDemoTest is Test {
         address[3] feeds;
     }
 
-    function _runScript() internal returns (RunEnv memory e) {
-        string memory saved = vm.readFile(DEPLOYMENTS);
-        new DeployDemo().run();
-        e.json = vm.readFile(DEPLOYMENTS);
-        vm.writeFile(DEPLOYMENTS, saved);
-        assertEq(keccak256(bytes(vm.readFile(DEPLOYMENTS))), keccak256(bytes(saved)), "deployments json restored");
+    /// @dev Runs the script into its own deployments/test-demo-<name>.json (never the tracked 31337.json, so
+    ///   parallel tests never read a half-written shared file) and deletes it
+    function _runScript(string memory name) internal returns (RunEnv memory e) {
+        string memory path = string.concat("deployments/test-demo-", name, ".json");
+        DeployDemo s = new DeployDemo();
+        s.setDeploymentsPath(path);
+        s.run();
+        e.json = vm.readFile(path);
+        vm.removeFile(path);
         e.maker = vm.parseJsonAddress(e.json, ".maker");
         e.taker = vm.parseJsonAddress(e.json, ".taker");
         e.aqua = Aqua(vm.parseJsonAddress(e.json, ".Aqua"));
@@ -510,7 +525,7 @@ contract DeployDemoTest is Test {
     /// @dev Taker (anvil #1) balances and approvals exactly as run() seeds them: 5e18 DemoWETH and 2e18 of each
     ///   yield token; router allowance = max for all four tokens; no Aqua allowance (pushMode pays via the router)
     function test_DeployDemo_RunTakerSeeding() public {
-        RunEnv memory e = _runScript();
+        RunEnv memory e = _runScript("taker-seeding");
         assertEq(e.taker, vm.addr(EXP_TAKER_PK), "taker = anvil account #1");
         assertEq(e.weth.balanceOf(e.taker), 5e18, "taker DemoWETH = TAKER_WETH 5e18");
         assertEq(e.weth.allowance(e.taker, address(e.router)), type(uint256).max, "taker DemoWETH -> router = max");
@@ -528,7 +543,7 @@ contract DeployDemoTest is Test {
     ///   feed rate (== the literal constant), the yield anchor for market k's own deposit, and the 10e18 WETH
     ///   anchor; Aqua holds market k's deposit; then the taker (pushMode) sells BUY_WETH exactIn, quote == swap.
     function test_DeployDemo_RunOrdersPriced() public {
-        RunEnv memory e = _runScript();
+        RunEnv memory e = _runScript("orders-priced");
         uint256[3] memory expRate = [EXP_RATE_WSTETH, EXP_RATE_RETH, EXP_RATE_WEETH];
         uint256[4] memory market = [uint256(0), 1, 2, 0];
         // Measured on this test's first run (v1.0.2 router + Extruction, fresh run() state)

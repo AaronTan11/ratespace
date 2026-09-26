@@ -2,7 +2,9 @@
 # LOCAL FORK OF SEPOLIA (chain 11155111) on port 8546, so the 31337 demo (script/demo.sh, port 8545) can keep
 # running. Deploys the RateSpace contracts with DeploySepolia, funds the maker (anvil #0) and taker (anvil #1)
 # along the real Sepolia path (stETH.submit -> approve -> wstETH.wrap, WETH.deposit), ships with ShipSepolia,
-# and builds deployments/11155111.json + 11155111.abi.json. Nothing is sent to any real network.
+# and writes deployments/11155111.fork.json (gitignored) + 11155111.abi.json. Nothing is sent to any real network.
+# The fork record never touches deployments/11155111.json (the real Sepolia deployment record the app reads):
+# this rehearsal checks the scripts, not the app.
 #
 # Needs SEPOLIA_RPC_URL in the environment (a Sepolia archive/full node). It is passed only to anvil; anvil's
 # output is scrubbed of URLs before it reaches the log. Stop with script/demo-sepolia-stop.sh.
@@ -15,6 +17,9 @@ if [ -z "${SEPOLIA_RPC_URL:-}" ]; then
 fi
 
 RPC=http://127.0.0.1:8546
+# DeploySepolia / ShipSepolia read and write this path instead of deployments/11155111.json. A fresh fork has
+# none of the old record's contracts, so the previous rehearsal's file is removed before DeploySepolia runs.
+export DEPLOYMENTS_PATH=deployments/11155111.fork.json
 # anvil's public default test keys #0 / #1 (printed by anvil at startup; not secrets). FORK ONLY: never use
 # these on real Sepolia (see script/SEPOLIA.md for the owner's real-network commands).
 K0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -76,6 +81,8 @@ fund() {
   echo "$who wstETH $(cast call --rpc-url "$RPC" "$WSTETH" "balanceOf(address)(uint256)" "$who") WETH $(cast call --rpc-url "$RPC" "$WETH" "balanceOf(address)(uint256)" "$who")"
 }
 
+rm -f "$DEPLOYMENTS_PATH"
+
 # Separate out/cache and --skip test: tests import BOTH AquaSwapVMRouter versions, which made forge 1.8.1
 # script fail to decode constructor args (see script/demo.sh). out-demo/ and cache-demo/ are gitignored.
 FOUNDRY_OUT=out-demo FOUNDRY_CACHE_PATH=cache-demo \
@@ -86,7 +93,7 @@ FOUNDRY_OUT=out-demo FOUNDRY_CACHE_PATH=cache-demo \
   forge script script/ShipSepolia.s.sol --rpc-url "$RPC" --broadcast --skip test --private-key "$K0"
 
 fund "$K1" "$TAKER"
-for r in $(bun -e 'const d = await Bun.file("deployments/11155111.json").json(); console.log(d.AquaSwapVMRouter, d.RateSpaceAquaRouter)'); do
+for r in $(bun -e 'const d = await Bun.file(process.env.DEPLOYMENTS_PATH).json(); console.log(d.AquaSwapVMRouter, d.RateSpaceAquaRouter)'); do
   send --private-key "$K1" "$WETH" "approve(address,uint256)" "$r" "$(cast max-uint)"
   send --private-key "$K1" "$WSTETH" "approve(address,uint256)" "$r" "$(cast max-uint)"
 done
@@ -95,5 +102,5 @@ bun run scripts/build-demo-abi.ts 11155111
 
 echo "maker (anvil #0): $MAKER"
 echo "taker (anvil #1): $TAKER"
-echo "deployments: $(pwd)/deployments/11155111.json"
+echo "deployments: $(pwd)/$DEPLOYMENTS_PATH (fork only; deployments/11155111.json untouched)"
 echo "abis:        $(pwd)/deployments/11155111.abi.json"

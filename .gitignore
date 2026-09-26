@@ -61,3 +61,4 @@ temp
 wiki/
 CLAUDE.md
 *.docx
+.playwright-mcp/

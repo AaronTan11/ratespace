@@ -25,22 +25,24 @@ contract DeploySepolia is SepoliaDeployment {
         Deployment memory d = deploy(sender);
         vm.stopBroadcast();
         string memory path = _deploymentsPath();
+        // DEPLOY_OVERWRITE is read first: with it set the file is never parsed (a corrupt file can be replaced)
         require(
-            !_hasShippedOrders(path) || vm.envOr("DEPLOY_OVERWRITE", false),
+            vm.envOr("DEPLOY_OVERWRITE", false) || !_hasShippedOrders(path),
             "DeploySepolia: deployments file already has shipped orders; set DEPLOY_OVERWRITE=1 to replace it"
         );
         _writeDeployment(path, d, new OrderRecord[](0));
     }
 
     /// @dev True when `path` exists and parses as JSON with a non-empty `orders` array (a real deployment
-    ///   record that a re-run would otherwise replace with `orders: []`)
+    ///   record that a re-run would otherwise replace with `orders: []`). Fails closed: a file that exists but
+    ///   does not parse (trailing comma, conflict markers, truncated write) reverts instead of being replaced.
     function _hasShippedOrders(string memory path) internal view returns (bool) {
         if (!vm.exists(path)) return false;
         string memory json = vm.readFile(path);
         try vm.keyExistsJson(json, ".orders[0]") returns (bool has) {
             return has;
         } catch {
-            return false;
+            revert("DeploySepolia: deployments file exists but cannot be parsed; fix or remove it (or set DEPLOY_OVERWRITE=1)");
         }
     }
 

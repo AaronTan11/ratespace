@@ -13,6 +13,10 @@ import {SepoliaScriptBase} from "./SepoliaScriptBase.sol";
 contract SepoliaScriptsRerunTest is SepoliaScriptBase {
     string internal constant CLOBBER_MSG =
         "DeploySepolia: deployments file already has shipped orders; set DEPLOY_OVERWRITE=1 to replace it";
+    string internal constant UNPARSABLE_MSG =
+        "DeploySepolia: deployments file exists but cannot be parsed; fix or remove it (or set DEPLOY_OVERWRITE=1)";
+    /// @dev A real record corrupted by a trailing comma
+    string internal constant CORRUPT_JSON = '{"orders":[{"a":1},]}';
 
     function _orderCount(string memory path) internal view returns (uint256) {
         (, OrderRecord[] memory o) = _readDeployment(path);
@@ -61,8 +65,11 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         vm.removeFile(path);
     }
 
-    /// @dev DeploySepolia.run() over a file with shipped orders reverts; with DEPLOY_OVERWRITE=1 it replaces it
-    /// @dev The only test that sets DEPLOY_OVERWRITE (process-global env); it sets it back to false at the end
+    /// @dev DeploySepolia.run() over a file with shipped orders reverts; with DEPLOY_OVERWRITE=1 it replaces it.
+    ///   Same for a file that exists but does not parse (fail closed): reverts, file untouched; with
+    ///   DEPLOY_OVERWRITE=1 it is replaced by `orders: []`.
+    /// @dev The only test that sets DEPLOY_OVERWRITE (process-global env, which races between parallel tests),
+    ///   so every expectation that depends on it lives here; it sets it back to false at the end
     function test_Rerun_DeployRefusesToClobberOrders() public onFork {
         string memory path = _testPath("rerun-clobber");
         address b = _broadcaster();
@@ -81,6 +88,20 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         vm.setEnv("DEPLOY_OVERWRITE", "false");
         assertEq(_orderCount(path), 0, "DEPLOY_OVERWRITE=1 replaced the file");
         vm.removeFile(path);
+
+        // Unparsable file: fail closed, then DEPLOY_OVERWRITE=1 replaces it
+        string memory bad = _testPath("rerun-unparsable");
+        vm.writeFile(bad, CORRUPT_JSON);
+        vm.expectRevert(bytes(UNPARSABLE_MSG));
+        this.deployRunExternal(bad);
+        assertEq(vm.readFile(bad), CORRUPT_JSON, "refused deploy left the corrupt file untouched");
+
+        vm.setEnv("DEPLOY_OVERWRITE", "1");
+        _deployRun(bad);
+        vm.setEnv("DEPLOY_OVERWRITE", "false");
+        assertEq(_orderCount(bad), 0, "DEPLOY_OVERWRITE=1 replaced the corrupt file with orders: []");
+        assertFalse(vm.keyExistsJson(vm.readFile(bad), ".orders[0]"), "orders: []");
+        vm.removeFile(bad);
     }
 
     function deployRunExternal(string memory path) external {

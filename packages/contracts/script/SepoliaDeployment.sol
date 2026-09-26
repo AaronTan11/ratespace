@@ -91,11 +91,16 @@ abstract contract SepoliaDeployment is Script {
     ///   ShipSepolia must not record contracts or orders that were never sent. --broadcast / --resume and
     ///   forge test (the fork tests) write.
     function _writeDeployment(string memory path, Deployment memory d, OrderRecord[] memory orders) internal {
-        if (vm.isContext(VmSafe.ForgeContext.ScriptDryRun)) {
+        if (!_shouldWrite()) {
             console.log("dry run: deployments file NOT written");
             return;
         }
         vm.writeFile(path, _deploymentJson(d, orders));
+    }
+
+    /// @dev False only under `forge script` without --broadcast (ScriptDryRun)
+    function _shouldWrite() internal view returns (bool) {
+        return !vm.isContext(VmSafe.ForgeContext.ScriptDryRun);
     }
 
     function _deploymentJson(Deployment memory d, OrderRecord[] memory orders) internal view returns (string memory json) {

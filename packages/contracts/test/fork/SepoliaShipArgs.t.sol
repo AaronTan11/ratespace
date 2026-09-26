@@ -106,7 +106,11 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
 
     /// @dev Fee binding: order 1 (no fee) = [curve, salt]; order 2 (fee) = [flat fee in, curve, salt] with the
     ///   owner's fee (500000 on 1e9 for the 1inch router, 5000 on 1e7 for RateSpaceAquaRouter)
-    function _checkFee(bytes memory program, bool oneInch, bool withFee, string memory tag) internal pure {
+    function _checkFee(bytes memory program, bool oneInch, bool withFee, string memory tag)
+        internal
+        pure
+        returns (bool feeDecoded)
+    {
         uint8 curve = oneInch ? OP_EXTRUCTION : OP_MOVING_PEG_SWAP;
         uint8 salt = oneInch ? OP_SALT_V1 : OP_SALT_V0;
         uint8 fee = oneInch ? OP_FEE_V1 : OP_FEE_V0;
@@ -116,11 +120,12 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
             if (ops[k] == fee) feeCount++;
         }
         assertEq(feeCount, withFee ? 1 : 0, string.concat(tag, ": fee instruction count"));
+        feeDecoded = feeCount == 1;
         assertEq(ops.length, withFee ? 3 : 2, string.concat(tag, ": instruction count"));
         uint256 o = withFee ? 1 : 0;
         assertEq(ops[o], curve, string.concat(tag, ": curve instruction"));
         assertEq(ops[o + 1], salt, string.concat(tag, ": salt instruction last"));
-        if (!withFee) return;
+        if (!withFee) return feeDecoded;
         assertEq(ops[0], fee, string.concat(tag, ": fee instruction first"));
         uint256 argLen = uint8(program[1]);
         assertEq(argLen, oneInch ? 4 : 3, string.concat(tag, ": fee args length"));
@@ -161,6 +166,16 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
         assertEq(nWeth, 2, "Aqua strategy live (WETH side, 2 tokens)");
     }
 
+    /// @dev The salt: the program's last instruction, [Salt opcode][8][uint64 salt] (1inch Salt 0x14 via
+    ///   ControlsArgsBuilder.buildSalt(uint64) = abi.encodePacked(salt); 3b3da7d Salt 0x02 pushes 8 bytes)
+    function _salt(bytes memory program, bool oneInch) internal pure returns (uint64) {
+        uint256 n = program.length;
+        require(n >= 10, "program too short for a salt");
+        assertEq(uint8(program[n - 10]), oneInch ? OP_SALT_V1 : OP_SALT_V0, "salt opcode");
+        assertEq(uint8(program[n - 9]), 8, "salt args length");
+        return uint64(_word(program, n - 8) >> 192);
+    }
+
     function _shipAndCheck(bool oneInch, string memory name) internal {
         string memory path = _testPath(name);
         address b = _broadcaster();
@@ -176,11 +191,16 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
         assertEq(liveRate, IWstETH(SepoliaAddresses.WSTETH).stEthPerToken(), "provider == live stEthPerToken");
         emit log_named_uint("live wstETH rate at fork block", liveRate);
         address router = oneInch ? d.oneInchRouter : d.rateSpaceRouter;
+        uint64[2] memory salts;
 
         for (uint256 k = 0; k < 2; k++) {
             OrderRecord memory r = orders[k];
             assertEq(vm.parseAddress(r.router), router, "order router");
             assertEq(r.hasFee, k == 1, "order hasFee");
+            // The fields the app selects and trades the market by (apps/web deployments.ts)
+            assertEq(vm.parseAddress(r.tokenYield), d.wstEth, "JSON tokenYield == WstETH");
+            assertEq(vm.parseAddress(r.tokenWeth), d.weth, "JSON tokenWeth == WETH");
+            assertEq(vm.parseAddress(r.rateFeed), d.rateProviderWstEth, "JSON rateFeed == RateProviderWstETH");
             bytes32 h = vm.parseBytes32(r.strategyHash);
             (uint248 depWst,) = IAqua(d.aqua).rawBalances(b, router, h, d.wstEth);
             (uint248 depWeth,) = IAqua(d.aqua).rawBalances(b, router, h, d.weth);
@@ -190,7 +210,9 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
             assertEq(depWst, uint256(depWeth) * 1e18 / liveRate, "wstETH deposit == depWeth * 1e18 / rate");
 
             bytes memory program = vm.parseBytes(r.program);
-            _checkFee(program, oneInch, k == 1, k == 0 ? "order 1" : "order 2");
+            bool feeDecoded = _checkFee(program, oneInch, k == 1, k == 0 ? "order 1" : "order 2");
+            assertEq(r.hasFee, feeDecoded, "JSON hasFee == decoded fee instruction");
+            salts[k] = _salt(program, oneInch);
             _checkRecord(r, d, router, oneInch, b);
             Mps memory m = _decode(program, _mpsOffset(program, oneInch, d.extruction));
             assertEq(m.refRateLt, liveRate, "refRateLt == live wstETH rate");
@@ -204,6 +226,7 @@ contract SepoliaShipArgsTest is SepoliaScriptBase {
             );
             assertEq(m.y0, depWeth, "y0 == depWeth");
         }
+        assertEq(uint256(salts[1]), uint256(salts[0]) + 1, "order 2 salt == order 1 salt + 1");
     }
 
     /// @dev Default path: 1inch's Sepolia AquaSwapVMRouter, MovingPeg args inside Extruction 0x20

@@ -2,8 +2,10 @@
 pragma solidity 0.8.30;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 
 import {ShipSepolia} from "../../script/ShipSepolia.s.sol";
+import {VerifySepolia} from "../../script/VerifySepolia.s.sol";
 
 import {SepoliaScriptBase} from "./SepoliaScriptBase.sol";
 
@@ -15,6 +17,8 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         "DeploySepolia: deployments file already has shipped orders; set DEPLOY_OVERWRITE=1 to replace it";
     string internal constant UNPARSABLE_MSG =
         "DeploySepolia: deployments file exists but cannot be parsed; fix or remove it (or set DEPLOY_OVERWRITE=1)";
+    string internal constant PHANTOM_MSG =
+        "VerifySepolia: PHANTOM orders in the deployments file (never shipped); re-run with PRUNE_PHANTOMS=1";
     /// @dev A real record corrupted by a trailing comma
     string internal constant CORRUPT_JSON = '{"orders":[{"a":1},]}';
 
@@ -102,6 +106,79 @@ contract SepoliaScriptsRerunTest is SepoliaScriptBase {
         assertEq(_orderCount(bad), 0, "DEPLOY_OVERWRITE=1 replaced the corrupt file with orders: []");
         assertFalse(vm.keyExistsJson(vm.readFile(bad), ".orders[0]"), "orders: []");
         vm.removeFile(bad);
+    }
+
+    function _verifyScript(string memory path) internal returns (VerifySepolia v) {
+        v = new VerifySepolia();
+        v.setDeploymentsPath(path);
+    }
+
+    /// @dev Deploy + Ship -> VerifySepolia: both orders live (OK), every contract has code, run() succeeds and
+    ///   leaves the file byte-identical
+    function test_Verify_OkAfterShip() public onFork {
+        string memory path = _testPath("verify-ok");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        _shipScript(path, true).run();
+        string memory before = vm.readFile(path);
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+
+        VerifySepolia v = _verifyScript(path);
+        bool[] memory live = v.liveOrders(d, orders);
+        assertEq(live.length, 2, "two orders checked");
+        assertTrue(live[0] && live[1], "both shipped orders OK");
+        assertEq(v.missingContracts(d), 0, "every recorded contract has code");
+        v.run();
+        assertEq(vm.readFile(path), before, "verify without phantoms leaves the file untouched");
+        vm.removeFile(path);
+    }
+
+    /// @dev A record the chain never saw (order 0 copied with strategyHash keccak256("phantom")) appended to the
+    ///   file: VerifySepolia flags it PHANTOM and reverts; with PRUNE_PHANTOMS=1 it rewrites the file with exactly
+    ///   the 2 real orders, byte-identical to the file before the append.
+    /// @dev The only test that sets PRUNE_PHANTOMS (process-global env); every expectation that depends on it
+    ///   lives here, and it is set back to "" before the asserts
+    function test_Verify_PhantomRevertsThenPrunes() public onFork {
+        string memory path = _testPath("verify-phantom");
+        address b = _broadcaster();
+        _deployRun(path);
+        _fund(b);
+        _shipScript(path, true).run();
+        string memory real = vm.readFile(path);
+        (Deployment memory d, OrderRecord[] memory orders) = _readDeployment(path);
+        assertEq(orders.length, 2, "shipped");
+
+        OrderRecord[] memory withPhantom = new OrderRecord[](3);
+        withPhantom[0] = orders[0];
+        withPhantom[1] = orders[1];
+        // A fresh copy: `= orders[0]` would alias the memory struct and change order 0 too
+        withPhantom[2] = abi.decode(abi.encode(orders[0]), (OrderRecord));
+        withPhantom[2].strategyHash = vm.toString(keccak256("phantom"));
+        vm.writeFile(path, _deploymentJson(d, withPhantom));
+        string memory tampered = vm.readFile(path);
+
+        VerifySepolia v = _verifyScript(path);
+        bool[] memory live = v.liveOrders(d, withPhantom);
+        assertTrue(live[0] && live[1] && !live[2], "real orders OK, appended record PHANTOM");
+
+        vm.expectRevert(bytes(PHANTOM_MSG));
+        v.run();
+        assertEq(vm.readFile(path), tampered, "refused verify left the file untouched");
+
+        vm.setEnv("PRUNE_PHANTOMS", "1");
+        v.run();
+        vm.setEnv("PRUNE_PHANTOMS", "");
+        assertEq(vm.readFile(path), real, "pruned file == the 2 real orders, byte-identical");
+        assertEq(_orderCount(path), 2, "pruned: 2 orders");
+        vm.removeFile(path);
+    }
+
+    /// @dev M10 helper: the write gate is open in a forge test (not ScriptDryRun). The dry-run branch itself can
+    ///   only be exercised by `forge script` without --broadcast (a by-hand fork run), not from a Test context.
+    function test_ShouldWrite_TrueOutsideDryRun() public view {
+        assertFalse(vm.isContext(VmSafe.ForgeContext.ScriptDryRun), "forge test is not a script dry run");
+        assertTrue(_shouldWrite(), "write gate open in test context");
     }
 
     function deployRunExternal(string memory path) external {

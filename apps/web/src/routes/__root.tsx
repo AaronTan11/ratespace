@@ -52,13 +52,13 @@ function RootDocument() {
       <body>
         <QueryClientProvider client={queryClient}>
           <WalletProvider>
-            <div className="grid h-svh grid-rows-[auto_1fr]">
+            <div className="grid min-h-svh grid-rows-[auto_1fr] content-start">
               <Header />
               <Outlet />
             </div>
           </WalletProvider>
         </QueryClientProvider>
-        <Toaster richColors />
+        <Toaster theme="dark" />
         <TanStackRouterDevtools position="bottom-left" />
         <Scripts />
       </body>

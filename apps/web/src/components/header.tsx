@@ -1,9 +1,18 @@
-import { Button } from "@ratespace/ui/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { CHAIN_ID, REFRESH_MS, chain, publicClient } from "@/lib/chain/config";
 import { shortAddress, useWallet } from "@/lib/chain/wallet";
+
+function Mark() {
+  // From the prototype: gold ring, teal core. 16px.
+  return (
+    <svg width="16" height="16" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <circle cx="13" cy="13" r="11" stroke="var(--gold)" strokeWidth="2.4" />
+      <circle cx="15.5" cy="13" r="5.5" fill="var(--teal)" />
+    </svg>
+  );
+}
 
 export default function Header() {
   const links = [
@@ -26,55 +35,71 @@ export default function Header() {
       : rpcChain.data === CHAIN_ID
         ? `${rpcChain.data} · ${chain.name}`
         : `RPC chain ${rpcChain.data} ≠ ${CHAIN_ID}`;
+  const rpcTone = rpcChain.isError ? "bad" : rpcChain.data === undefined ? "" : rpcChain.data === CHAIN_ID ? "good" : "bad";
   const walletOnWrongChain =
     wallet.available && wallet.walletChainId !== undefined && wallet.walletChainId !== CHAIN_ID;
 
   return (
     <div>
-      <div className="flex flex-row items-center justify-between gap-4 px-4 py-2">
-        <div className="flex items-center gap-6">
-          <span className="text-base font-semibold">RateSpace</span>
-          <nav className="flex gap-4 text-sm">
-            {links.map(({ to, label }) => (
-              <Link
-                key={to}
-                to={to}
-                activeOptions={{ exact: true }}
-                className="text-muted-foreground [&.active]:text-foreground"
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="border px-2 py-1 font-mono">{rpcLabel}</span>
-          {wallet.address ? (
-            <span className="border px-2 py-1 font-mono">{shortAddress(wallet.address)}</span>
-          ) : (
-            <Button variant="outline" onClick={() => void wallet.connect()} disabled={wallet.connecting}>
-              {wallet.connecting ? "Connecting…" : wallet.available ? "Connect wallet" : "No wallet"}
-            </Button>
-          )}
-        </div>
-      </div>
       {walletOnWrongChain ? (
-        <div className="flex items-center gap-2 px-4 pb-2 text-xs text-destructive">
+        <div className="rs-topbar" role="alert">
           <span>
-            Wallet is on chain {wallet.walletChainId}; this app uses {CHAIN_ID} · {chain.name}.
+            Wallet is on chain <span className="rs-num">{wallet.walletChainId}</span>; this app uses{" "}
+            <span className="rs-num">{CHAIN_ID}</span> · {chain.name}.
           </span>
-          <Button
-            variant="outline"
-            size="sm"
+          <button
+            type="button"
+            className="rs-btn sm bad"
             onClick={() => void wallet.switchNetwork()}
             disabled={wallet.switching}
           >
             {wallet.switching ? "Switching…" : "Switch network"}
-          </Button>
+          </button>
         </div>
       ) : null}
-      {wallet.error ? <p className="px-4 pb-2 text-xs text-destructive">{wallet.error}</p> : null}
-      <hr />
+      {wallet.error ? (
+        <div className="rs-topbar" role="alert">
+          <span>{wallet.error}</span>
+        </div>
+      ) : null}
+      <header className="rs-header">
+        <Link to="/" className="rs-wordmark" aria-label="RateSpace home">
+          <Mark />
+          RateSpace
+        </Link>
+        <nav className="rs-nav" aria-label="Main">
+          {links.map(({ to, label }) => (
+            <Link key={to} to={to} activeOptions={{ exact: true }}>
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="right">
+          <span className={`rs-chip${rpcTone ? ` ${rpcTone}` : ""}`} title={`RPC chain id vs app chain ${CHAIN_ID}`}>
+            <span className={`rs-dot${rpcTone ? ` ${rpcTone}` : ""}`} aria-hidden />
+            {rpcLabel}
+          </span>
+          {wallet.address ? (
+            <span className="rs-chip" title={wallet.address} style={{ color: "var(--text)" }}>
+              <span
+                className={`rs-dot ${walletOnWrongChain ? "bad" : "good"}`}
+                aria-label={walletOnWrongChain ? "connected, wrong chain" : "connected"}
+              />
+              {shortAddress(wallet.address)}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="rs-chip"
+              onClick={() => void wallet.connect()}
+              disabled={wallet.connecting}
+            >
+              <span className="rs-dot" aria-label="not connected" />
+              {wallet.connecting ? "Connecting…" : wallet.available ? "Connect wallet" : "No wallet"}
+            </button>
+          )}
+        </div>
+      </header>
     </div>
   );
 }
